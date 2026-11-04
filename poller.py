@@ -213,24 +213,124 @@ def mark_seen(db, job):
                (job["id"], job["title"]))
 
 
+# ---------- AI review (Gemini) ----------
+
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+
+CANDIDATE = """
+Candidate:
+- Computer Science new grad, University of Minnesota, graduating December 2026.
+- Strong in C++, C, Python; full-stack web (JavaScript); Linux; SQL basics.
+- Has NO Java experience. No industry internship; experience is TA work and projects.
+- Work authorization: F-1 OPT from January 2027 with STEM extension = can work
+  up to 3 years with NO sponsorship needed. Cannot take roles that require US
+  citizenship, a green card, or a security clearance.
+- Wants software / IT / QA / data / support roles. Contract or contract-to-hire is fine.
+"""
+
+PROMPT = """You screen job postings for one candidate.
+%s
+For each job below decide:
+- "apply": entry-level friendly (0-2 years), matches his skills, no blocker.
+- "maybe": could work but has a concern (e.g. asks 2-3 years, unclear stack,
+  or says "no sponsorship now or in the future").
+- "skip": needs 3+ years, senior-level, wrong field, Java-heavy, or needs
+  citizenship / green card / clearance.
+
+Return ONLY a JSON list, one object per job, in this form:
+[{"id": "<job id>", "verdict": "apply|maybe|skip", "reason": "<under 15 words>"}]
+
+Jobs:
+%s
+"""
+
+
+def apex_description(link):
+    page_html = fetch(link)
+    text = strip_tags(page_html)
+    start = text.find("Job Description")
+    if start >= 0:
+        text = text[start:]
+    return re.sub(r"\s+", " ", text)[:3000]
+
+
+def ask_gemini(jobs):
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        return None
+    parts = []
+    for job in jobs:
+        desc = re.sub(r"\s+", " ", job["desc"])[:3000]
+        parts.append("ID: %s\nTitle: %s\nLocation: %s\nDescription: %s\n"
+                     % (job["id"], job["title"], job["location"], desc or "(none)"))
+    body = {
+        "contents": [{"parts": [{"text": PROMPT % (CANDIDATE, "\n---\n".join(parts))}]}],
+        "generationConfig": {"responseMimeType": "application/json", "temperature": 0},
+    }
+    url = ("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
+           % (GEMINI_MODEL, key))
+    data = json.loads(fetch(url, body))
+    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    verdicts = {}
+    for item in json.loads(text):
+        verdicts[item["id"]] = (item.get("verdict", "maybe"), item.get("reason", ""))
+    return verdicts
+
+
+def ai_review(jobs):
+    # Apex lists have no description, so open each Apex job page first.
+    for job in jobs:
+        if job["firm"] == "Apex Systems" and not job["desc"]:
+            try:
+                job["desc"] = apex_description(job["link"])
+            except Exception:
+                pass
+    verdicts = {}
+    for i in range(0, len(jobs), 15):  # 15 jobs per request keeps it small
+        result = ask_gemini(jobs[i:i + 15])
+        if result is None:
+            return False
+        verdicts.update(result)
+    for job in jobs:
+        job["verdict"], job["reason"] = verdicts.get(job["id"], ("maybe", "AI gave no answer"))
+    return True
+
+
 # ---------- email ----------
 
-def build_email(new_jobs, errors):
+def job_lines(job):
+    line = "- %s | %s | %s" % (job["title"], job["firm"], job["location"])
+    if job["type"]:
+        line += " | " + job["type"]
+    if job["posted"]:
+        line += " | posted " + job["posted"]
+    lines = [line]
+    if job.get("reason"):
+        lines.append("  why: " + job["reason"])
+    lines.append("  " + job["link"])
+    if job["contact"]:
+        lines.append("  recruiter: " + job["contact"])
+    return lines
+
+
+def build_email(new_jobs, errors, ai_used):
     lines = []
-    current_firm = None
-    for job in sorted(new_jobs, key=lambda j: j["firm"]):
-        if job["firm"] != current_firm:
-            current_firm = job["firm"]
-            lines.append("\n== " + current_firm + " ==")
-        line = "- %s | %s" % (job["title"], job["location"])
-        if job["type"]:
-            line += " | " + job["type"]
-        if job["posted"]:
-            line += " | posted " + job["posted"]
-        lines.append(line)
-        lines.append("  " + job["link"])
-        if job["contact"]:
-            lines.append("  recruiter: " + job["contact"])
+    if ai_used:
+        sections = [("APPLY", "apply"), ("MAYBE", "maybe")]
+        for heading, verdict in sections:
+            group = [j for j in new_jobs if j.get("verdict") == verdict]
+            if group:
+                lines.append("\n== " + heading + " ==")
+                for job in group:
+                    lines.extend(job_lines(job))
+        skipped = [j for j in new_jobs if j.get("verdict") == "skip"]
+        if skipped:
+            lines.append("\n(AI skipped %d: %s)" % (
+                len(skipped), "; ".join(j["title"] for j in skipped)))
+    else:
+        lines.append("(AI check off or failed - showing all keyword matches)")
+        for job in new_jobs:
+            lines.extend(job_lines(job))
     if errors:
         lines.append("\n(Could not check: " + ", ".join(errors) + ")")
     return "\n".join(lines).strip()
@@ -278,17 +378,32 @@ def main():
         print("Nothing new.")
         return
 
-    body = build_email(new_jobs, errors)
+    try:
+        ai_used = ai_review(new_jobs)
+    except Exception as e:
+        print("AI check FAILED (%s)" % e)
+        ai_used = False
+
+    good_count = len([j for j in new_jobs if j.get("verdict") != "skip"])
+    body = build_email(new_jobs, errors, ai_used)
     print("\n" + body)
 
     if dry_run:
         return
 
-    send_email("%d new staffing-firm jobs (Twin Cities)" % len(new_jobs), body)
+    if good_count > 0:
+        subject = "%d new staffing-firm jobs (Twin Cities)" % good_count
+        if ai_used:
+            applies = len([j for j in new_jobs if j.get("verdict") == "apply"])
+            subject = "%d apply / %d new staffing-firm jobs" % (applies, good_count)
+        send_email(subject, body)
+        print("\nEmailed.")
+    else:
+        print("\nAI skipped everything new - no email.")
+
     for job in new_jobs:
         mark_seen(db, job)
     db.commit()
-    print("\nEmailed %d jobs." % len(new_jobs))
 
 
 if __name__ == "__main__":
