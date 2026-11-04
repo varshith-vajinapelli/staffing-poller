@@ -1,8 +1,9 @@
 """
 Staffing firm job poller.
 
-Checks Apex Systems, Brooksource, Experis, Robert Half, TEKsystems and
-Insight Global for new Twin Cities jobs that fit an entry-level candidate,
+Checks Apex Systems, Brooksource, Experis, Robert Half, TEKsystems,
+Insight Global, Randstad and Beacon Hill for new Twin Cities jobs that fit an
+entry-level candidate,
 has Gemini read the survivors, remembers what it already sent in jobs.db,
 and emails only the new matches.
 
@@ -32,8 +33,8 @@ USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 # Title must contain one of these to count as a role worth looking at.
 GOOD_WORDS = [
     "developer", "software", "engineer", "programmer", "web", "application",
-    "qa", "quality assurance", "test", "analyst", "support", "help desk",
-    "helpdesk", "technician", "data", "it ", "systems", "junior", "associate",
+    "qa", "quality assurance", "test", "analyst", "data", "it ", "systems",
+    "junior", "associate", "automation", "quality engineer",
     "entry", "intern", "configuration",
 ]
 
@@ -50,6 +51,15 @@ BAD_WORDS = [
     "surveillance", "compliance", "project engineer", "design engineer",
     "engineering technician", "repair", "r&d", "accounts payable",
     "stockroom", "quality technician", "qa technician", "penetration",
+    # IT support roles that don't lead toward engineering
+    "help desk", "helpdesk", "desktop support", "service desk",
+    "support analyst", "support technician", "support specialist",
+    "it support", "technical support", "print support", "field service",
+    "technician", "end user", "deployment specialist", "imaging",
+    # IT administration / operations (servers, accounts, networks)
+    "administrator", "admin", "sysadmin", "systems engineer", "system engineer",
+    "network", "infrastructure", "identity", "iam", "access management",
+    "active directory", "data management", "server", "storage",
 ]
 
 # Description containing any of these is skipped.
@@ -153,11 +163,12 @@ def apex_jobs():
     return jobs
 
 
-def brooksource_jobs():
+def wordpress_jobs(firm, id_prefix, base_url, pages, real_dates):
+    # Brooksource and Beacon Hill both run the same WordPress job plugin,
+    # which has a public newest-first job feed.
     jobs = []
-    for page in (1, 2, 3):
-        url = ("https://jobs.brooksource.com/jobs/wp-json/wp/v2/job-listings"
-               "?per_page=100&page=%d" % page)
+    for page in range(1, pages + 1):
+        url = base_url + "/wp-json/wp/v2/job-listings?per_page=100&page=%d" % page
         try:
             items = json.loads(fetch(url))
         except Exception:
@@ -171,15 +182,58 @@ def brooksource_jobs():
             if not (in_twin_cities(location) or "minnesota" in location.lower() or remote):
                 continue
             jobs.append({
-                "id": "brooksource:%s" % it["id"],
-                "firm": "Brooksource",
+                "id": "%s:%s" % (id_prefix, it["id"]),
+                "firm": firm,
                 "title": html.unescape(it["title"]["rendered"]),
                 "location": location + (" (remote)" if remote else ""),
                 "type": "",
-                "posted": "",  # feed date is a refresh date, not the real post date
+                "posted": it.get("date", "")[:10] if real_dates else "",
                 "contact": "",
                 "link": it.get("link", ""),
                 "desc": strip_tags(it.get("content", {}).get("rendered", "")),
+            })
+    return jobs
+
+
+def brooksource_jobs():
+    # Brooksource's feed date is a refresh date, not the real post date.
+    return wordpress_jobs("Brooksource", "brooksource",
+                          "https://jobs.brooksource.com/jobs", 3, False)
+
+
+def beacon_hill_jobs():
+    # Newest 300 US jobs (about a week), keep Minnesota ones.
+    return wordpress_jobs("Beacon Hill", "beaconhill",
+                          "https://bhsg.com/jobs", 3, True)
+
+
+def randstad_jobs():
+    # Their search page ignores location, so read the newest US computer/IT
+    # jobs (30 per page) from the data the page carries, and keep Minnesota.
+    jobs = []
+    for page in (1, 2, 3, 4):
+        url = "https://www.randstadusa.com/jobs/r-computer-and-mathematical-occupations/"
+        if page > 1:
+            url += "page-%d/" % page
+        page_html = fetch(url)
+        found = re.search(r"const data = (\{.*?\});\s*\n", page_html, re.S)
+        if not found:
+            break
+        data = json.loads(found.group(1))
+        for it in data.get("ecommerce", {}).get("impressions", []):
+            if it.get("region") != "Minnesota":
+                continue
+            kinds = it.get("employment_type", "")
+            jobs.append({
+                "id": "randstad:%s" % it.get("reference_number"),
+                "firm": "Randstad",
+                "title": it.get("job_title", "").strip(" -"),
+                "location": "%s, MN" % it.get("city", ""),
+                "type": "Contract" if "CONTRACTOR" in kinds else "",
+                "posted": it.get("launch_date", ""),
+                "contact": "",
+                "link": it.get("url", ""),
+                "desc": "",
             })
     return jobs
 
@@ -314,6 +368,8 @@ FIRMS = [
     ("Robert Half", robert_half_jobs),
     ("TEKsystems", teksystems_jobs),
     ("Insight Global", insight_global_jobs),
+    ("Randstad", randstad_jobs),
+    ("Beacon Hill", beacon_hill_jobs),
 ]
 
 
@@ -355,7 +411,13 @@ Candidate:
 - Work authorization: F-1 OPT from January 2027 with STEM extension = can work
   up to 3 years with NO sponsorship needed. Cannot take roles that require US
   citizenship, a green card, or a security clearance.
-- Wants software / IT / QA / data / support roles. Contract or contract-to-hire is fine.
+- Wants ENGINEERING roles only: software developer/engineer, QA / test
+  automation, data engineering/analysis with real coding, DevOps. Contract or
+  contract-to-hire is fine. Does NOT want help desk, desktop/service desk,
+  general IT support, or IT administration roles (password resets, user
+  accounts / Active Directory, server, network or infrastructure admin);
+  mark those "skip" even if entry-level. The job must be mostly writing code
+  or testing software.
 """
 
 PROMPT = """You screen job postings for one candidate.
@@ -393,9 +455,10 @@ def apex_description(job):
     return text
 
 
-def teksystems_description(job):
+def json_description(job):
+    # TEKsystems and Randstad job pages carry the posting in a "description" field.
     page_html = fetch(job["link"])
-    found = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"', page_html)
+    found = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.){50,})"', page_html)
     if not found:
         return job["desc"]
     text = json.loads('"' + found.group(1) + '"')
@@ -411,7 +474,8 @@ def insight_global_description(job):
 # Firms whose job list has no (or only a short) description: open each job page.
 DESCRIBERS = {
     "Apex Systems": apex_description,
-    "TEKsystems": teksystems_description,
+    "TEKsystems": json_description,
+    "Randstad": json_description,
     "Insight Global": insight_global_description,
 }
 
@@ -462,6 +526,13 @@ def ai_review(jobs):
         if result is None:
             return False
         verdicts.update(result)
+    # The model sometimes leaves a job out; ask once more for just those.
+    missing = [j for j in jobs if j["id"] not in verdicts]
+    if missing:
+        try:
+            verdicts.update(ask_gemini(missing) or {})
+        except Exception:
+            pass
     for job in jobs:
         job["verdict"], job["reason"] = verdicts.get(job["id"], ("maybe", "AI gave no answer"))
     return True
