@@ -1,1 +1,40 @@
-# staffing-poller
+# Staffing job poller
+
+Every 30 minutes it checks Apex Systems, Brooksource and Experis for new
+Twin Cities jobs that fit an entry-level candidate, and emails you only the
+ones it hasn't sent before.
+
+## Setup (one time)
+
+1. **Make a private GitHub repo** and push these files to it
+   (`poller.py`, `README.md`, `.github/workflows/poll.yml`).
+
+2. **Make a Gmail app password** for the account that will send the email
+   (your personal Gmail works best; school accounts often block app passwords):
+   Google Account → Security → 2-Step Verification (must be on) → App passwords
+   → create one named "job poller". Copy the 16-character password.
+
+3. **Add three secrets** in the repo: Settings → Secrets and variables →
+   Actions → New repository secret:
+   - `GMAIL_USER`: the Gmail address that sends
+   - `GMAIL_APP_PASSWORD`: the app password from step 2
+   - `EMAIL_TO`: where you want the alerts (can be the same address)
+
+4. **Run it once by hand**: Actions tab → "Staffing job poller" → Run workflow.
+   Open the run's log: each firm prints how many jobs it found. After that it
+   runs by itself every 30 minutes.
+
+## Test on your laptop first (optional)
+
+```
+python poller.py --dry-run
+```
+
+Prints what it would email. Sends nothing and saves nothing.
+
+## Changing what counts as a fit
+
+Edit the word lists at the top of `poller.py`:
+- `GOOD_WORDS`: a title needs one of these
+- `BAD_WORDS`: a title with any of these is skipped
+- `BAD_DESC`: a description with any of these is skipped
