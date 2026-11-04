@@ -10,6 +10,7 @@ Run:  python poller.py            (check + email)
       python poller.py --dry-run  (check + print, no email, nothing saved)
 """
 
+import datetime
 import html
 import json
 import os
@@ -21,6 +22,10 @@ import urllib.request
 from email.mime.text import MIMEText
 
 DB_FILE = "jobs.db"
+
+# Only show jobs posted within this many days. Change this number to adjust.
+# (Brooksource has no real post date, so its jobs are never dropped by age.)
+MAX_AGE_DAYS = 7
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 
@@ -84,6 +89,19 @@ def too_many_years(desc):
     nums = [int(n) for n in re.findall(r"(\d+)\s*\+?\s*(?:-\s*\d+\s*)?years?", desc)]
     nums = [n for n in nums if n < 30]
     return bool(nums) and min(nums) >= 3
+
+
+def too_old(posted):
+    # posted is "2026-11-04" or "11/4/2026"; an empty date is never too old
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", posted)
+    if m:
+        day = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    else:
+        m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", posted)
+        if not m:
+            return False
+        day = datetime.date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+    return (datetime.date.today() - day).days > MAX_AGE_DAYS
 
 
 def is_good(title, desc=""):
@@ -547,7 +565,8 @@ def main():
             print("%s: FAILED (%s)" % (name, e))
             errors.append(name)
             continue
-        good = [j for j in jobs if is_good(j["title"], j["desc"])]
+        good = [j for j in jobs
+                if is_good(j["title"], j["desc"]) and not too_old(j["posted"])]
         already = set(j["id"] for j in new_jobs)
         fresh = []
         for j in good:
