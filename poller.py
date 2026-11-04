@@ -1,9 +1,10 @@
 """
 Staffing firm job poller.
 
-Checks Apex Systems, Brooksource and Experis for new Twin Cities jobs that fit
-an entry-level candidate, remembers what it already sent in jobs.db, and emails
-only the new matches.
+Checks Apex Systems, Brooksource, Experis, Robert Half, TEKsystems and
+Insight Global for new Twin Cities jobs that fit an entry-level candidate,
+has Gemini read the survivors, remembers what it already sent in jobs.db,
+and emails only the new matches.
 
 Run:  python poller.py            (check + email)
       python poller.py --dry-run  (check + print, no email, nothing saved)
@@ -189,10 +190,112 @@ def experis_jobs():
     return jobs
 
 
+def robert_half_jobs():
+    # Server-rendered search page for Minneapolis tech jobs, 25 per page.
+    jobs = []
+    card_re = re.compile(r'<rhcl-job-card job-id="([^"]+)".*?</rhcl-job-card>', re.S)
+    for page in (1, 2, 3, 4):
+        url = ("https://www.roberthalf.com/us/en/jobs/minneapolis-mn/technology"
+               "?pagenumber=%d" % page)
+        page_html = fetch(url)
+        cards = list(card_re.finditer(page_html))
+        if not cards:
+            break
+        for m in cards:
+            card = m.group(0)
+
+            def slot(name):
+                found = re.search(r'data-subslot="%s">(.*?)</li>' % name, card, re.S)
+                return found.group(1).strip() if found else ""
+
+            link = re.search(r'href="([^"]+)"', card).group(1)
+            title = re.search(r'slot="headline"[^>]*>(.*?)</a>', card, re.S).group(1)
+            jobs.append({
+                "id": "roberthalf:" + m.group(1),
+                "firm": "Robert Half",
+                "title": html.unescape(title.strip()),
+                "location": html.unescape(slot("location")),
+                "type": html.unescape(slot("type")),
+                "posted": slot("date")[:10],
+                "contact": "",
+                "link": link,
+                "desc": strip_tags(html.unescape(slot("copy"))),
+            })
+    return jobs
+
+
+def teksystems_jobs():
+    # Same request their search page makes, filtered to Minnesota.
+    jobs = []
+    for start in (0, 50, 100):
+        body = {
+            "lang": "en_us", "deviceType": "desktop", "country": "us",
+            "pageName": "search-results", "ddoKey": "refineSearch",
+            "sortBy": "Most recent", "subsearch": "", "from": start,
+            "jobs": True, "counts": True, "all_fields": ["state"], "size": 50,
+            "clearAll": False, "jdsource": "facets", "isSliderEnable": False,
+            "pageId": "page12", "siteType": "external", "keywords": "",
+            "global": True, "selected_fields": {"state": ["Minnesota"]},
+            "locationData": {},
+        }
+        data = json.loads(fetch("https://careers.teksystems.com/widgets", body))
+        items = data["refineSearch"]["data"]["jobs"]
+        if not items:
+            break
+        for it in items:
+            slug = re.sub(r"[^A-Za-z0-9]+", "-", it.get("title", "")).strip("-")
+            jobs.append({
+                "id": "tek:" + it["jobId"],
+                "firm": "TEKsystems",
+                "title": it.get("title", ""),
+                "location": "%s, MN" % it.get("city", ""),
+                "type": it.get("type") or "",
+                "posted": (it.get("postedDate") or "")[:10],
+                "contact": "",
+                "link": "https://careers.teksystems.com/us/en/job/%s/%s" % (it["jobId"], slug),
+                "desc": it.get("descriptionTeaser") or "",
+            })
+        if len(items) < 50:
+            break
+    return jobs
+
+
+def insight_global_jobs():
+    # Their API can't filter by place, so read the newest 200 US jobs and keep MN.
+    jobs = []
+    for page in (1, 2, 3, 4):
+        url = ("https://insightglobal.com/all/jobs?keyword=&page=%d&size=50"
+               "&sort=postedDate,desc&filter.includeOnlyRemoteWork=false"
+               "&filter.status=active" % page)
+        data = json.loads(fetch(url))
+        for it in data.get("jobs", []):
+            address = it.get("workAddress") or {}
+            if address.get("administrativeArea") != "MN":
+                continue
+            location = "%s, MN" % address.get("locality", "")
+            if it.get("workRemote"):
+                location += " (remote)"
+            jobs.append({
+                "id": "insight:" + it["requisitionId"],
+                "firm": "Insight Global",
+                "title": it.get("jobTitle", ""),
+                "location": location,
+                "type": it.get("jobType") or "",
+                "posted": (it.get("postedDate") or "")[:10],
+                "contact": "",
+                "link": "https://insightglobal.com/jobs/" + it["requisitionId"],
+                "desc": "",
+            })
+    return jobs
+
+
 FIRMS = [
     ("Apex Systems", apex_jobs),
     ("Brooksource", brooksource_jobs),
     ("Experis", experis_jobs),
+    ("Robert Half", robert_half_jobs),
+    ("TEKsystems", teksystems_jobs),
+    ("Insight Global", insight_global_jobs),
 ]
 
 
@@ -245,13 +348,35 @@ Jobs:
 """
 
 
-def apex_description(link):
-    page_html = fetch(link)
-    text = strip_tags(page_html)
+def apex_description(job):
+    text = strip_tags(fetch(job["link"]))
     start = text.find("Job Description")
     if start >= 0:
         text = text[start:]
-    return re.sub(r"\s+", " ", text)[:3000]
+    return text
+
+
+def teksystems_description(job):
+    page_html = fetch(job["link"])
+    found = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"', page_html)
+    if not found:
+        return job["desc"]
+    text = json.loads('"' + found.group(1) + '"')
+    return strip_tags(html.unescape(text))
+
+
+def insight_global_description(job):
+    req_id = job["id"].split(":", 1)[1]
+    data = json.loads(fetch("https://insightglobal.com/all/jobs/%s/details" % req_id))
+    return strip_tags(data.get("description", ""))
+
+
+# Firms whose job list has no (or only a short) description: open each job page.
+DESCRIBERS = {
+    "Apex Systems": apex_description,
+    "TEKsystems": teksystems_description,
+    "Insight Global": insight_global_description,
+}
 
 
 def ask_gemini(jobs):
@@ -278,11 +403,11 @@ def ask_gemini(jobs):
 
 
 def ai_review(jobs):
-    # Apex lists have no description, so open each Apex job page first.
     for job in jobs:
-        if job["firm"] == "Apex Systems" and not job["desc"]:
+        describe = DESCRIBERS.get(job["firm"])
+        if describe:
             try:
-                job["desc"] = apex_description(job["link"])
+                job["desc"] = re.sub(r"\s+", " ", describe(job))[:3000]
             except Exception:
                 pass
     verdicts = {}
@@ -336,11 +461,69 @@ def build_email(new_jobs, errors, ai_used):
     return "\n".join(lines).strip()
 
 
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def nice_date(posted):
+    # "2026-11-04" or "11/4/2026" -> "Nov 4"
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", posted)
+    if m:
+        return "%s %d" % (MONTHS[int(m.group(2)) - 1], int(m.group(3)))
+    m = re.match(r"(\d{1,2})/(\d{1,2})/\d{4}", posted)
+    if m:
+        return "%s %d" % (MONTHS[int(m.group(1)) - 1], int(m.group(2)))
+    return posted
+
+
+def job_html(job):
+    e = html.escape
+    details = [job["firm"], job["location"]]
+    if job["type"]:
+        details.append(job["type"])
+    if job["posted"]:
+        details.append("posted " + nice_date(job["posted"]))
+    out = '<p style="margin:0 0 16px 0">'
+    out += '<b><a href="%s">%s</a></b><br>' % (e(job["link"]), e(job["title"].strip()))
+    out += '<span style="color:#555">%s</span>' % e(" · ".join(details))
+    if job.get("reason"):
+        out += "<br>%s" % e(job["reason"])
+    if job["contact"]:
+        out += '<br>Recruiter: <a href="mailto:%s">%s</a>' % (e(job["contact"]), e(job["contact"]))
+    out += "</p>"
+    return out
+
+
+def build_html(new_jobs, errors, ai_used):
+    parts = ['<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.4">']
+    if ai_used:
+        for heading, verdict in [("Apply", "apply"), ("Maybe", "maybe")]:
+            group = [j for j in new_jobs if j.get("verdict") == verdict]
+            if group:
+                parts.append('<h3 style="margin:20px 0 10px 0">%s (%d)</h3>' % (heading, len(group)))
+                for job in group:
+                    parts.append(job_html(job))
+        skipped = [j for j in new_jobs if j.get("verdict") == "skip"]
+        if skipped:
+            parts.append('<p style="color:#888;font-size:12px">Skipped: %s</p>'
+                         % html.escape(", ".join(j["title"].strip() for j in skipped)))
+    else:
+        parts.append('<p style="color:#888;font-size:12px">AI check off or failed, '
+                     'showing all keyword matches.</p>')
+        for job in new_jobs:
+            parts.append(job_html(job))
+    if errors:
+        parts.append('<p style="color:#888;font-size:12px">Could not check: %s</p>'
+                     % html.escape(", ".join(errors)))
+    parts.append("</div>")
+    return "\n".join(parts)
+
+
 def send_email(subject, body):
     user = os.environ["GMAIL_USER"]
     password = os.environ["GMAIL_APP_PASSWORD"]
     to = os.environ.get("EMAIL_TO", user)
-    msg = MIMEText(body)
+    msg = MIMEText(body, "html")
     msg["Subject"] = subject
     msg["From"] = user
     msg["To"] = to
@@ -396,7 +579,7 @@ def main():
         if ai_used:
             applies = len([j for j in new_jobs if j.get("verdict") == "apply"])
             subject = "%d apply / %d new staffing-firm jobs" % (applies, good_count)
-        send_email(subject, body)
+        send_email(subject, build_html(new_jobs, errors, ai_used))
         print("\nEmailed.")
     else:
         print("\nAI skipped everything new - no email.")
