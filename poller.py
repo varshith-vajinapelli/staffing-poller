@@ -336,13 +336,22 @@ def mark_seen(db, job):
 
 # ---------- AI review (Gemini) ----------
 
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
+# Tried in order: the better model first, the lighter one if the first
+# hits its free daily limit or fails.
+GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
 
 CANDIDATE = """
 Candidate:
 - Computer Science new grad, University of Minnesota, graduating December 2026.
-- Strong in C++, C, Python; full-stack web (JavaScript); Linux; SQL basics.
-- Has NO Java experience. No industry internship; experience is TA work and projects.
+- Strong in C++, C, Python; full-stack web (JavaScript); Linux user (not a
+  sysadmin); SQL basics; Git; GitHub Actions.
+- Has NO Java experience. No industry internship.
+- Experience: undergrad TA for C++ (software design) and intro Python courses;
+  undergrad research on a C++ peer-to-peer audio/video streaming system.
+- Projects: GopherEvents (shipped full-stack web app); a job-alert tool that
+  polls job APIs on GitHub Actions and uses an LLM to screen postings;
+  open-source contributions to Wikimedia.
+- Long-term interest: backend / systems engineering.
 - Work authorization: F-1 OPT from January 2027 with STEM extension = can work
   up to 3 years with NO sponsorship needed. Cannot take roles that require US
   citizenship, a green card, or a security clearance.
@@ -351,12 +360,22 @@ Candidate:
 
 PROMPT = """You screen job postings for one candidate.
 %s
+Be strict. Read the REQUIRED qualifications, not just the title.
 For each job below decide:
-- "apply": entry-level friendly (0-2 years), matches his skills, no blocker.
-- "maybe": could work but has a concern (e.g. asks 2-3 years, unclear stack,
-  or says "no sponsorship now or in the future").
-- "skip": needs 3+ years, senior-level, wrong field, Java-heavy, or needs
-  citizenship / green card / clearance.
+- "apply": a new grad with only coursework, projects and TA work could
+  realistically meet MOST of the required list. Entry-level wording
+  (junior, associate, entry level, 0-2 years, new grad) is a strong signal.
+- "maybe": could work but has a concern (asks 2-3 years, asks for one or two
+  specific tools he hasn't used, unclear stack, or says "no sponsorship now
+  or in the future").
+- "skip": needs 3+ years, senior-level, wrong field, Java-heavy, needs
+  citizenship / green card / clearance, OR the required list is mostly
+  specialist hands-on experience a new grad won't have (words like "deep",
+  "extensive", "expert", "proven", or several named enterprise tools/products
+  like RHEL admin, Kerberos, Proxmox, Splunk, SAP, Epic, Active Directory
+  administration).
+Do NOT mark "apply" just because a skill word (Linux, Python, SQL) appears in
+both the job and the candidate profile; judge the depth the job requires.
 
 Return ONLY a JSON list, one object per job, in this form:
 [{"id": "<job id>", "verdict": "apply|maybe|skip", "reason": "<under 15 words>"}]
@@ -410,10 +429,19 @@ def ask_gemini(jobs):
         "contents": [{"parts": [{"text": PROMPT % (CANDIDATE, "\n---\n".join(parts))}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0},
     }
-    url = ("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
-           % (GEMINI_MODEL, key))
-    data = json.loads(fetch(url, body))
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    text = None
+    for model in GEMINI_MODELS:
+        url = ("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
+               % (model, key))
+        try:
+            data = json.loads(fetch(url, body))
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+            print("AI model used: " + model)
+            break
+        except Exception as e:
+            print("AI model %s failed (%s), trying next" % (model, e))
+    if text is None:
+        raise RuntimeError("all Gemini models failed")
     verdicts = {}
     for item in json.loads(text):
         verdicts[item["id"]] = (item.get("verdict", "maybe"), item.get("reason", ""))
