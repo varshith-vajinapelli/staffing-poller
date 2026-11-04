@@ -34,7 +34,8 @@ USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 GOOD_WORDS = [
     "developer", "software", "engineer", "programmer", "web", "application",
     "qa", "quality assurance", "test", "analyst", "data", "it ", "systems",
-    "junior", "associate", "automation", "quality engineer",
+    "junior", "associate", "automation", "quality engineer", "support",
+    "technician",
     "entry", "intern", "configuration",
 ]
 
@@ -51,15 +52,8 @@ BAD_WORDS = [
     "surveillance", "compliance", "project engineer", "design engineer",
     "engineering technician", "repair", "r&d", "accounts payable",
     "stockroom", "quality technician", "qa technician", "penetration",
-    # IT support roles that don't lead toward engineering
+    # help desk / desktop support roles
     "help desk", "helpdesk", "desktop support", "service desk",
-    "support analyst", "support technician", "support specialist",
-    "it support", "technical support", "print support", "field service",
-    "technician", "end user", "deployment specialist", "imaging",
-    # IT administration / operations (servers, accounts, networks)
-    "administrator", "admin", "sysadmin", "systems engineer", "system engineer",
-    "network", "infrastructure", "identity", "iam", "access management",
-    "active directory", "data management", "server", "storage",
 ]
 
 # Description containing any of these is skipped.
@@ -411,13 +405,9 @@ Candidate:
 - Work authorization: F-1 OPT from January 2027 with STEM extension = can work
   up to 3 years with NO sponsorship needed. Cannot take roles that require US
   citizenship, a green card, or a security clearance.
-- Wants ENGINEERING roles only: software developer/engineer, QA / test
-  automation, data engineering/analysis with real coding, DevOps. Contract or
-  contract-to-hire is fine. Does NOT want help desk, desktop/service desk,
-  general IT support, or IT administration roles (password resets, user
-  accounts / Active Directory, server, network or infrastructure admin);
-  mark those "skip" even if entry-level. The job must be mostly writing code
-  or testing software.
+- Wants software / QA / test / data / IT roles. Contract or contract-to-hire
+  is fine. Does NOT want help desk or desktop support roles; mark those
+  "skip" even if entry-level.
 """
 
 PROMPT = """You screen job postings for one candidate.
@@ -430,7 +420,9 @@ For each job below decide:
 - "maybe": could work but has a concern (asks 2-3 years, asks for one or two
   specific tools he hasn't used, unclear stack, or says "no sponsorship now
   or in the future").
-- "skip": needs 3+ years, senior-level, wrong field, Java-heavy, needs
+- "skip": needs 3+ years, senior-level, wrong field, Java REQUIRED as the
+  main language with no alternative (a list like "Java, .NET, or OOP" or
+  "Python or Java" is fine - his C++ counts as OOP), needs
   citizenship / green card / clearance, OR the required list is mostly
   specialist hands-on experience a new grad won't have (words like "deep",
   "extensive", "expert", "proven", or several named enterprise tools/products
@@ -438,6 +430,10 @@ For each job below decide:
   administration).
 Do NOT mark "apply" just because a skill word (Linux, Python, SQL) appears in
 both the job and the candidate profile; judge the depth the job requires.
+Software testing / QA / test analyst roles count as engineering roles he
+wants, even if the title also says "analyst" or "BA".
+If you are unsure between "apply" and "skip", choose "maybe". Only "skip"
+when there is a clear blocker.
 
 Return ONLY a JSON list, one object per job, in this form:
 [{"id": "<job id>", "verdict": "apply|maybe|skip", "reason": "<under 15 words>"}]
@@ -622,8 +618,14 @@ def build_html(new_jobs, errors, ai_used):
                     parts.append(job_html(job))
         skipped = [j for j in new_jobs if j.get("verdict") == "skip"]
         if skipped:
-            parts.append('<p style="color:#888;font-size:12px">Skipped: %s</p>'
-                         % html.escape(", ".join(j["title"].strip() for j in skipped)))
+            items = []
+            for j in skipped:
+                text = j["title"].strip()
+                if j.get("reason"):
+                    text += " (" + j["reason"] + ")"
+                items.append(html.escape(text))
+            parts.append('<p style="color:#888;font-size:12px">Skipped:<br>%s</p>'
+                         % "<br>".join(items))
     else:
         parts.append('<p style="color:#888;font-size:12px">AI check off or failed, '
                      'showing all keyword matches.</p>')
