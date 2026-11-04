@@ -38,6 +38,12 @@ BAD_WORDS = [
     "java", "cobol", "mainframe", "salesforce", "servicenow", "sap ",
     "workday", "oracle", "dynamics", "nurse", "medical rep", "accountant",
     "payroll", "recruiter",
+    # non-software fields that share words like "engineer" / "technician"
+    "lab ", "laboratory", "manufacturing", "mechanical", "materials",
+    "medical device", "hardware", "failure analysis", "supplier",
+    "surveillance", "compliance", "project engineer", "design engineer",
+    "engineering technician", "repair", "r&d", "accounts payable",
+    "stockroom", "quality technician", "qa technician", "penetration",
 ]
 
 # Description containing any of these is skipped.
