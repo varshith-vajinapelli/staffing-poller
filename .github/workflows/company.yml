@@ -6,10 +6,10 @@ on:
 permissions:
   contents: write              # needed to save jobs.db back to the repo
 
-# One run at a time: a new run waits for the previous one to finish
-# instead of running alongside it (both would edit jobs.db).
+# One run at a time across BOTH pollers (they share jobs.db): a run that
+# starts while the other poller is still going waits for it to finish.
 concurrency:
-  group: company-poller
+  group: jobs-db
   cancel-in-progress: false
 
 jobs:
