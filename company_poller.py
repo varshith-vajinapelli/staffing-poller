@@ -64,7 +64,7 @@ COMPANY_BAD_WORDS = [
     "financial", "editorial", "psqr", "construction", "cost engineer",
     "mechanical", "electrical", "process engineer", "manufacturing", "chemical",
     "operations analyst", "business operations analyst",
-    "hubspot", "recruit", "accountant", "actuar", "bim",
+    "hubspot", "recruit*", "accountant", "actuar*", "bim",
 ]
 
 
@@ -72,7 +72,7 @@ def company_title_ok(title):
     t = " " + title.lower() + " "
     if not any(w in t for w in TECH_WORDS):
         return False
-    return not any(w in t for w in COMPANY_BAD_WORDS)
+    return not any(poller.has_word(t, w) for w in COMPANY_BAD_WORDS)
 
 
 # ---------- places to keep ----------

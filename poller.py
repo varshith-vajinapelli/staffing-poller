@@ -54,7 +54,7 @@ GOOD_WORDS = [
 
 # Title containing any of these is skipped (too senior or wrong stack).
 BAD_WORDS = [
-    "senior", "sr.", "sr ", " lead ", " lead,", " lead/", " lead-", "(lead", "principal", "manager", "director",
+    "senior", "sr.", "sr", "lead", "principal", "manager", "director",
     "architect", "staff ", "head of",
     "java", "cobol", "mainframe", "salesforce", "servicenow", "sap ",
     "workday", "oracle", "dynamics", "nurse", "medical rep", "accountant",
@@ -230,6 +230,18 @@ def too_old(posted):
     return (datetime.date.today() - day).days > MAX_AGE_DAYS
 
 
+def has_word(text, word):
+    # Whole-word match: "lead" matches "Lead Engineer" but not "Leadership",
+    # "architect" doesn't match "Architecture". A word ending in "*" matches as
+    # a prefix ("actuar*" -> actuary, actuarial).
+    word = word.strip().lower()
+    if word.endswith("*"):
+        pattern = r"(?<![a-z0-9])" + re.escape(word[:-1])
+    else:
+        pattern = r"(?<![a-z0-9])" + re.escape(word) + r"(?![a-z0-9])"
+    return re.search(pattern, text) is not None
+
+
 def drop_reason(title, desc=""):
     # Returns why the keyword filter drops this job, or "" if it passes.
     t = " " + title.lower() + " "
@@ -238,7 +250,7 @@ def drop_reason(title, desc=""):
     # "javascript" contains "java", so hide it before checking BAD_WORDS
     t2 = t.replace("javascript", "js")
     for w in BAD_WORDS:
-        if w in t2:
+        if has_word(t2, w):
             return "title word: %s" % w.strip()
     # Level III / IV / 3 / 4 / 5 right after the role ("Software Engineer III",
     # "IT Analyst 3") is mid/senior; a number elsewhere ("4 days on-site") is not.
