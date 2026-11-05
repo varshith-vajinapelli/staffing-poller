@@ -199,6 +199,10 @@ def days_ago(posted_on):
     return int(m.group(1)) if m else 999
 
 
+# Workday jobs dropped by title before their details are fetched.
+early_drops = []
+
+
 def workday_jobs_for(company, host, tenant, site):
     base = "https://%s/wday/cxs/%s/%s" % (host, tenant, site)
     seen_paths = set()
@@ -215,7 +219,16 @@ def workday_jobs_for(company, host, tenant, site):
             if age > poller.MAX_AGE_DAYS:
                 continue
             title = it.get("title", "")
-            if not poller.is_good(title):
+            reason = poller.drop_reason(title)
+            if reason:
+                # remembered here, written to the dropped log in main()
+                early_drops.append({
+                    "id": "workday:%s:%s" % (tenant, path),
+                    "firm": company,
+                    "title": title,
+                    "link": "https://%s/%s%s" % (host, site, path),
+                    "reason": reason,
+                })
                 continue
             # The list only says "3 Locations" sometimes, so read the job itself.
             info = json.loads(poller.fetch(base + path)).get("jobPostingInfo", {})
@@ -299,8 +312,16 @@ def main():
     fresh = []
     already = set()
     same_posting = set()
+    for j in early_drops:
+        if not dry_run:
+            poller.log_dropped(db, j, j["reason"])
     for j in new_jobs:
-        if not poller.is_good(j["title"], j["desc"]) or not company_title_ok(j["title"]):
+        reason = poller.drop_reason(j["title"], j["desc"])
+        if not reason and not company_title_ok(j["title"]):
+            reason = "company title filter"
+        if reason:
+            if not dry_run:
+                poller.log_dropped(db, j, reason)
             continue
         if poller.is_seen(db, j["id"]) or j["id"] in already:
             continue
@@ -314,6 +335,7 @@ def main():
     print("%d new after filters" % len(fresh))
 
     if not fresh:
+        db.commit()  # save the dropped log
         print("Nothing new.")
         return
 
@@ -355,6 +377,7 @@ def main():
     else:
         print("\nAI skipped everything new - no email.")
 
+    poller.log_ai_skips(db, fresh)
     for job in fresh:
         poller.mark_seen(db, job)
     db.commit()

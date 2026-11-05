@@ -99,8 +99,8 @@ def strip_tags(text):
     return html.unescape(re.sub(r"<[^>]+>", " ", text or ""))
 
 
-def too_many_years(desc):
-    # "3+ years of experience" -> skip if the smallest number is 3 or more.
+def years_asked(desc):
+    # Smallest "X years of experience" number in the description, or None.
     # Only counts a number when "experience" follows within ~60 characters, so
     # "18 years of age" or "in business for 20 years" are ignored.
     # Anything this misses still goes through the AI check.
@@ -110,7 +110,14 @@ def too_many_years(desc):
         if "experience" in after or "exp " in after or "exp." in after:
             nums.append(int(m.group(1)))
     nums = [n for n in nums if n < 30]
-    return bool(nums) and min(nums) >= 3
+    if not nums:
+        return None
+    return min(nums)
+
+
+def too_many_years(desc):
+    years = years_asked(desc)
+    return years is not None and years >= 3
 
 
 def too_old(posted):
@@ -126,19 +133,28 @@ def too_old(posted):
     return (datetime.date.today() - day).days > MAX_AGE_DAYS
 
 
-def is_good(title, desc=""):
+def drop_reason(title, desc=""):
+    # Returns why the keyword filter drops this job, or "" if it passes.
     t = " " + title.lower() + " "
     if not any(w in t for w in GOOD_WORDS):
-        return False
+        return "title has no tech word"
     # "javascript" contains "java", so hide it before checking BAD_WORDS
-    if any(w in t.replace("javascript", "js") for w in BAD_WORDS):
-        return False
+    t2 = t.replace("javascript", "js")
+    for w in BAD_WORDS:
+        if w in t2:
+            return "title word: %s" % w.strip()
     d = desc.lower()
-    if any(w in d for w in BAD_DESC):
-        return False
-    if too_many_years(d):
-        return False
-    return True
+    for w in BAD_DESC:
+        if w in d:
+            return "description: %s" % w
+    years = years_asked(d)
+    if years is not None and years >= 3:
+        return "asks %d+ years" % years
+    return ""
+
+
+def is_good(title, desc=""):
+    return drop_reason(title, desc) == ""
 
 
 def in_twin_cities(location):
@@ -392,7 +408,32 @@ def open_db():
     db = sqlite3.connect(DB_FILE)
     db.execute("CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, title TEXT, seen_at TEXT)")
     db.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value INTEGER)")
+    db.execute("CREATE TABLE IF NOT EXISTS dropped (id TEXT PRIMARY KEY, firm TEXT, "
+               "title TEXT, link TEXT, reason TEXT, dropped_at TEXT)")
+    # keep the dropped log small: forget anything older than 30 days
+    db.execute("DELETE FROM dropped WHERE dropped_at < datetime('now', '-30 days')")
     return db
+
+
+def log_dropped(db, job, reason):
+    # Each job is logged once, the first time it is dropped.
+    db.execute("INSERT OR IGNORE INTO dropped VALUES (?, ?, ?, ?, ?, datetime('now'))",
+               (job["id"], job["firm"], job["title"], job.get("link", ""), reason))
+
+
+def log_ai_skips(db, jobs):
+    for job in jobs:
+        if job.get("verdict") == "skip":
+            log_dropped(db, job, "AI skip: %s" % job.get("reason", ""))
+
+
+def show_dropped(db, days=7):
+    rows = db.execute("SELECT dropped_at, reason, firm, title, link FROM dropped "
+                      "WHERE dropped_at >= datetime('now', ?) ORDER BY dropped_at DESC",
+                      ("-%d days" % days,)).fetchall()
+    for when, reason, firm, title, link in rows:
+        print("%s | %s | %s | %s | %s" % (when[:10], reason, firm, title, link))
+    print("%d dropped in the last %d days" % (len(rows), days))
 
 
 def get_ai_fails(db):
@@ -698,6 +739,9 @@ def send_email(subject, body):
 def main():
     dry_run = "--dry-run" in sys.argv
     db = open_db()
+    if "--dropped" in sys.argv:   # python poller.py --dropped  -> list what was filtered out
+        show_dropped(db)
+        return
     new_jobs = []
     errors = []
 
@@ -708,8 +752,16 @@ def main():
             print("%s: FAILED (%s)" % (name, e))
             errors.append(name)
             continue
-        good = [j for j in jobs
-                if is_good(j["title"], j["desc"]) and not too_old(j["posted"])]
+        good = []
+        for j in jobs:
+            if too_old(j["posted"]):
+                continue
+            reason = drop_reason(j["title"], j["desc"])
+            if reason:
+                if not dry_run:
+                    log_dropped(db, j, reason)
+            else:
+                good.append(j)
         already = set(j["id"] for j in new_jobs)
         fresh = []
         for j in good:
@@ -720,6 +772,7 @@ def main():
         new_jobs.extend(fresh)
 
     if not new_jobs:
+        db.commit()  # save the dropped log
         print("Nothing new.")
         return
 
@@ -762,6 +815,7 @@ def main():
     else:
         print("\nAI skipped everything new - no email.")
 
+    log_ai_skips(db, new_jobs)
     for job in new_jobs:
         mark_seen(db, job)
     db.commit()
