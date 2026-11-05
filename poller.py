@@ -59,9 +59,18 @@ BAD_WORDS = [
 ]
 
 # Description containing any of these is skipped.
+# Only clear requirement phrases - a bare mention like "open to US citizens and
+# all authorized candidates" should not drop the job. Anything these miss
+# still goes through the AI check, which skips citizenship-only roles.
 BAD_DESC = [
-    "u.s. citizen", "us citizen", "united states citizen", "citizenship required",
-    "green card", "security clearance", "secret clearance", "public trust",
+    "citizenship required", "citizenship is required",
+    "requires us citizenship", "requires u.s. citizenship",
+    "must be a us citizen", "must be a u.s. citizen",
+    "must be us citizen", "must be u.s. citizen",
+    "must be a united states citizen",
+    "us citizens only", "u.s. citizens only", "citizens only",
+    "green card holders only", "gc holders only",
+    "security clearance", "secret clearance", "public trust",
 ]
 
 TWIN_CITIES = [
@@ -91,8 +100,15 @@ def strip_tags(text):
 
 
 def too_many_years(desc):
-    # "3+ years", "5 years of experience" -> skip if the smallest number is 3 or more
-    nums = [int(n) for n in re.findall(r"(\d+)\s*\+?\s*(?:-\s*\d+\s*)?years?", desc)]
+    # "3+ years of experience" -> skip if the smallest number is 3 or more.
+    # Only counts a number when "experience" follows within ~60 characters, so
+    # "18 years of age" or "in business for 20 years" are ignored.
+    # Anything this misses still goes through the AI check.
+    nums = []
+    for m in re.finditer(r"(\d+)\s*\+?\s*(?:-\s*\d+\s*)?years?", desc):
+        after = desc[m.end():m.end() + 60]
+        if "experience" in after or "exp " in after or "exp." in after:
+            nums.append(int(m.group(1)))
     nums = [n for n in nums if n < 30]
     return bool(nums) and min(nums) >= 3
 
@@ -114,7 +130,8 @@ def is_good(title, desc=""):
     t = " " + title.lower() + " "
     if not any(w in t for w in GOOD_WORDS):
         return False
-    if any(w in t for w in BAD_WORDS):
+    # "javascript" contains "java", so hide it before checking BAD_WORDS
+    if any(w in t.replace("javascript", "js") for w in BAD_WORDS):
         return False
     d = desc.lower()
     if any(w in d for w in BAD_DESC):
