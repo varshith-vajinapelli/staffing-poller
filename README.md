@@ -1,3 +1,15 @@
+# Job pollers
+
+Two scripts run every 30 minutes and email only new matches:
+
+- `poller.py`: staffing firms (Apex, Brooksource, Experis, Robert Half,
+  TEKsystems, Insight Global, Randstad, Beacon Hill).
+- `company_poller.py`: jobs posted by companies themselves: Simplify's public
+  new-grad and internship lists (filtered to the Twin Cities, mid-size metros
+  and the South; internships = Twin Cities any season, or US off-season) plus
+  Minnesota employers' Workday boards (Target, U.S. Bank, Medtronic, 3M,
+  General Mills, Ameriprise, Securian).
+
 # Staffing job poller
 
 Every 30 minutes it checks Apex Systems, Brooksource and Experis for new

@@ -26,6 +26,15 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python poller.py
 
+      - name: Check company job boards and email new jobs
+        continue-on-error: true    # a problem here never blocks saving jobs.db
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python company_poller.py
+
       - name: Save what was already sent
         run: |
           git config user.name "job-poller"
