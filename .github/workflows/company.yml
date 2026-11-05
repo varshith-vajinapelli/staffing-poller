@@ -1,7 +1,7 @@
 name: Company job digest
 
 on:
-  workflow_dispatch:   # started at 7:52 AM and 5:52 PM Central by cron-job.org (and the Run workflow button)
+  workflow_dispatch:   # started at 11:52 AM and 5:52 PM Central by cron-job.org (and the Run workflow button)
 
 permissions:
   contents: write              # needed to save jobs.db back to the repo

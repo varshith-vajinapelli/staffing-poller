@@ -1,6 +1,6 @@
 # Job pollers
 
-Two scripts email only new matches: `poller.py` every 30 minutes, `company_poller.py` twice a day (about 7:52 AM and 5:52 PM Central) as a digest.
+Two scripts email only new matches: `poller.py` every 30 minutes, `company_poller.py` twice a day (11:52 AM and 5:52 PM Central) as a digest.
 
 - `poller.py`: staffing firms (Apex, Brooksource, Experis, Robert Half,
   TEKsystems, Insight Global, Randstad, Beacon Hill).
