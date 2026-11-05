@@ -1,3 +1,7 @@
+# 🤖 Fully managed by a Claude agent
+
+> **This repo is automated.** The code is written and maintained by Claude (Anthropic's AI agent), and the pollers run on their own via GitHub Actions. Commits like "update seen jobs" are the bot saving its progress.
+
 # Job pollers
 
 Two scripts email only new matches: `poller.py` every 30 minutes, `company_poller.py` twice a day (11:52 AM and 5:52 PM Central) as a digest.
