@@ -46,6 +46,33 @@ WORKDAY_COMPANIES = [
 ]
 WORKDAY_SEARCHES = ["software", "developer", "data", "intern", "associate engineer"]
 
+# Company titles must contain one of these (stricter than the staffing feed,
+# because companies post every kind of job, not just tech).
+TECH_WORDS = [
+    "software", "developer", "programmer", "engineer", "data", "machine learning",
+    " ml ", " ai ", "ai/", "qa", "quality assurance", "test", "automation",
+    "full-stack", "full stack", "frontend", "front-end", "backend", "back-end",
+    "web", "cloud", "devops", "platform", "application", "computer",
+]
+
+# Company titles with any of these are skipped.
+COMPANY_BAD_WORDS = [
+    "warehouse", "advisor", "patient", "customer service", "sales", "marketing",
+    "designer", "clinical", "toll", "sports", "gis", "geographic", "credit risk",
+    "financial", "editorial", "psqr", "construction", "cost engineer",
+    "mechanical", "electrical", "process engineer", "manufacturing", "chemical",
+    "supply chain", "operations analyst", "business operations analyst",
+    "hubspot", "recruit", "accountant", "actuar", "bim",
+]
+
+
+def company_title_ok(title):
+    t = " " + title.lower() + " "
+    if not any(w in t for w in TECH_WORDS):
+        return False
+    return not any(w in t for w in COMPANY_BAD_WORDS)
+
+
 # ---------- where Sai wants to work ----------
 
 SOUTH_STATES = {
@@ -271,11 +298,17 @@ def main():
     # keyword filter + memory (same rules as the staffing poller)
     fresh = []
     already = set()
+    same_posting = set()
     for j in new_jobs:
-        if not poller.is_good(j["title"], j["desc"]):
+        if not poller.is_good(j["title"], j["desc"]) or not company_title_ok(j["title"]):
             continue
         if poller.is_seen(db, j["id"]) or j["id"] in already:
             continue
+        # The lists sometimes repeat one job (same company + title) several times.
+        key = (j["firm"].lower(), j["title"].lower())
+        if key in same_posting:
+            continue
+        same_posting.add(key)
         fresh.append(j)
         already.add(j["id"])
     print("%d new after filters" % len(fresh))
