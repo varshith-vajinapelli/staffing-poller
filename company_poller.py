@@ -271,8 +271,24 @@ def workday_jobs():
 
 def page_text(job):
     # Simplify links go to many different career sites; take the page's text.
+    if "myworkdayjobs.com" in job["link"]:
+        return workday_page_text(job["link"])
     text = poller.strip_tags(re.sub(r"(?is)<(script|style).*?</\1>", " ", poller.fetch(job["link"])))
     return text
+
+
+def workday_page_text(link):
+    # Workday pages are built by JavaScript (a plain fetch gets an empty page),
+    # so ask Workday's own job API, the same one used for the Minnesota boards.
+    # https://acme.wd5.myworkdayjobs.com/en-US/External/job/City/Title_R123
+    #   -> https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/job/City/Title_R123
+    m = re.match(r"https://([^/]+)/(?:[a-z]{2}-[A-Z]{2}/)?([^/?]+)(/job/[^?]+)", link)
+    if not m:
+        return ""
+    host, site, path = m.groups()
+    tenant = host.split(".")[0]
+    data = json.loads(poller.fetch("https://%s/wday/cxs/%s/%s%s" % (host, tenant, site, path)))
+    return poller.strip_tags(data.get("jobPostingInfo", {}).get("jobDescription", ""))
 
 
 INTERNSHIP_RULES = """Some jobs are internships (their Location/type line says so). For those:
@@ -358,14 +374,22 @@ def run(db, dry_run):
         return False
 
     # Simplify jobs have no description yet: read their pages for the AI.
+    unread = []
     for job in fresh:
         if job["id"].startswith("simplify:") and not job["desc"]:
             try:
                 job["desc"] = re.sub(r"\s+", " ", page_text(job))[:3000]
-            except Exception as e:
-                poller.note_problem("describe:Simplify",
-                                    "Couldn't read some Simplify job pages for the AI (%s); "
-                                    "it judged them from the title only" % e)
+            except Exception:
+                job["desc"] = ""
+            # Under ~300 characters means the page was blocked or built by
+            # JavaScript - the AI only gets the title, so say so.
+            if len(job["desc"]) < 300:
+                job["desc"] = ""
+                unread.append(job["firm"])
+    if unread:
+        poller.note_problem("describe:Simplify",
+                            "Couldn't read %d job pages, so the AI judged them from the title "
+                            "only: %s" % (len(unread), ", ".join(sorted(set(unread)))))
 
     for job in fresh:
         job["location"] = "%s · %s" % (job["location"], job["type"])
