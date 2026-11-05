@@ -176,14 +176,14 @@ METRO_CENTERS = [
 
 # ---------- small helpers ----------
 
-def fetch(url, data=None):
+def fetch(url, data=None, timeout=30):
     headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
     body = None
     if data is not None:
         body = json.dumps(data).encode()
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=body, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", errors="replace")
 
 
@@ -828,7 +828,8 @@ def ask_gemini(jobs):
             url = ("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
                    % (model, key))
             try:
-                data = json.loads(fetch(url, body))
+                # 3.8 Flash thinks before answering; 30s cut it off, so give it 2 minutes
+                data = json.loads(fetch(url, body, timeout=120))
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 print("AI model used: " + model)
                 break
