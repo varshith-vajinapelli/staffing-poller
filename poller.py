@@ -19,6 +19,7 @@ import re
 import smtplib
 import sqlite3
 import sys
+import time
 import urllib.request
 from email.mime.text import MIMEText
 
@@ -490,16 +491,22 @@ def ask_gemini(jobs):
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0},
     }
     text = None
-    for model in GEMINI_MODELS:
-        url = ("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
-               % (model, key))
-        try:
-            data = json.loads(fetch(url, body))
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-            print("AI model used: " + model)
+    # Gemini is sometimes briefly overloaded (503), so try each model up to
+    # 3 times with a short wait before moving on.
+    for attempt in range(3):
+        for model in GEMINI_MODELS:
+            url = ("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s"
+                   % (model, key))
+            try:
+                data = json.loads(fetch(url, body))
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                print("AI model used: " + model)
+                break
+            except Exception as e:
+                print("AI model %s failed (%s), trying next" % (model, e))
+        if text is not None:
             break
-        except Exception as e:
-            print("AI model %s failed (%s), trying next" % (model, e))
+        time.sleep(20)
     if text is None:
         raise RuntimeError("all Gemini models failed")
     verdicts = {}
@@ -516,12 +523,17 @@ def ai_review(jobs):
                 job["desc"] = re.sub(r"\s+", " ", describe(job))[:3000]
             except Exception:
                 pass
+    if not os.environ.get("GEMINI_API_KEY"):
+        return False
     verdicts = {}
     for i in range(0, len(jobs), 15):  # 15 jobs per request keeps it small
-        result = ask_gemini(jobs[i:i + 15])
-        if result is None:
-            return False
-        verdicts.update(result)
+        try:
+            verdicts.update(ask_gemini(jobs[i:i + 15]) or {})
+        except Exception as e:
+            # Keep the batches that worked; this batch shows up as "maybe".
+            print("AI batch failed (%s)" % e)
+    if not verdicts:
+        return False
     # The model sometimes leaves a job out; ask once more for just those.
     missing = [j for j in jobs if j["id"] not in verdicts]
     if missing:
@@ -530,7 +542,7 @@ def ai_review(jobs):
         except Exception:
             pass
     for job in jobs:
-        job["verdict"], job["reason"] = verdicts.get(job["id"], ("maybe", "AI gave no answer"))
+        job["verdict"], job["reason"] = verdicts.get(job["id"], ("maybe", "AI was busy, check this one yourself"))
     return True
 
 
