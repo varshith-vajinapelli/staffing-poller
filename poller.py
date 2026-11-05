@@ -24,6 +24,7 @@ import urllib.request
 from email.mime.text import MIMEText
 
 DB_FILE = "jobs.db"
+MAX_AI_FAILS = 4   # failed AI runs in a row before sending unfiltered (runs are 30 min apart)
 
 # Only show jobs posted within this many days. Change this number to adjust.
 # (Brooksource has no real post date, so its jobs are never dropped by age.)
@@ -373,7 +374,19 @@ FIRMS = [
 def open_db():
     db = sqlite3.connect(DB_FILE)
     db.execute("CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, title TEXT, seen_at TEXT)")
+    db.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value INTEGER)")
     return db
+
+
+def get_ai_fails(db):
+    row = db.execute("SELECT value FROM state WHERE key = 'ai_fails'").fetchone()
+    if row is None:
+        return 0
+    return row[0]
+
+
+def set_ai_fails(db, count):
+    db.execute("INSERT OR REPLACE INTO state VALUES ('ai_fails', ?)", (count,))
 
 
 def is_seen(db, job_id):
@@ -698,6 +711,22 @@ def main():
     except Exception as e:
         print("AI check FAILED (%s)" % e)
         ai_used = False
+
+    # If the AI failed, hold the jobs for the next run instead of sending them
+    # unfiltered. After MAX_AI_FAILS failed runs in a row (~2 hours), send anyway.
+    if not dry_run:
+        if ai_used:
+            set_ai_fails(db, 0)
+        else:
+            fails = get_ai_fails(db) + 1
+            if fails < MAX_AI_FAILS:
+                set_ai_fails(db, fails)
+                db.commit()
+                print("AI failed (%d in a row) - holding %d jobs for next run"
+                      % (fails, len(new_jobs)))
+                return
+            print("AI failed %d runs in a row - sending unfiltered" % fails)
+            set_ai_fails(db, 0)
 
     good_count = len([j for j in new_jobs if j.get("verdict") != "skip"])
     body = build_email(new_jobs, errors, ai_used)
