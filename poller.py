@@ -20,11 +20,15 @@ import smtplib
 import sqlite3
 import sys
 import time
+import traceback
 import urllib.request
 from email.mime.text import MIMEText
+from zoneinfo import ZoneInfo
 
 DB_FILE = "jobs.db"
 MAX_AI_FAILS = 4   # failed AI runs in a row before sending unfiltered (runs are 30 min apart)
+ALERT_WAIT_HOURS = 3   # problems wait this long for a job email before getting their own
+ZERO_RUNS = 12         # a firm with 0 jobs this many runs in a row (6 hours) gets flagged
 
 # Only show jobs posted within this many days. Change this number to adjust.
 # (Brooksource has no real post date, so its jobs are never dropped by age.)
@@ -79,6 +83,44 @@ TWIN_CITIES = [
     "hopkins", "golden valley", "st. louis park", "saint louis park", "richfield",
     "burnsville", "woodbury", "arden hills", "shoreview", "brooklyn park",
     "wayzata", "fridley", "mendota heights", "chaska", "shakopee", "lakeville",
+]
+
+# Places outside Minnesota worth moving to: (state code, state name, metro cities).
+# All of Minnesota and fully remote US jobs are always kept too.
+PLACES = [
+    ("WI", "wisconsin", [
+        "milwaukee", "waukesha", "brookfield", "wauwatosa", "west allis",
+        "menomonee falls", "new berlin", "glendale", "pewaukee", "madison",
+        "middleton", "fitchburg", "sun prairie", "verona"]),
+    ("MI", "michigan", [
+        "detroit", "ann arbor", "troy", "southfield", "dearborn", "farmington hills",
+        "novi", "auburn hills", "livonia", "warren", "sterling heights", "pontiac",
+        "royal oak", "bloomfield hills", "northville", "plymouth", "grand rapids",
+        "kentwood", "grandville"]),
+    ("GA", "georgia", [
+        "atlanta", "alpharetta", "marietta", "sandy springs", "roswell", "norcross",
+        "kennesaw", "smyrna", "peachtree corners", "johns creek", "duluth", "decatur",
+        "lawrenceville", "dunwoody", "buford", "cumming", "lithia springs",
+        "douglasville", "mcdonough", "conyers", "stockbridge", "fayetteville",
+        "peachtree city", "woodstock", "acworth", "tucker", "suwanee", "college park"]),
+    ("IL", "illinois", [
+        "chicago", "schaumburg", "naperville", "oak brook", "oakbrook terrace",
+        "downers grove", "lisle", "deerfield", "northbrook", "lombard", "evanston",
+        "rosemont", "itasca", "lincolnshire", "skokie", "elk grove village",
+        "hoffman estates", "des plaines", "riverwoods", "bannockburn", "aurora",
+        "wheaton", "warrenville", "oak brook", "glenview", "arlington heights",
+        "rolling meadows", "vernon hills", "mettawa", "westchester", "cary"]),
+]
+
+# Center points for searches that take a location (40-mile radius around each).
+METRO_CENTERS = [
+    ("Minneapolis", 44.9778, -93.2650),
+    ("Milwaukee", 43.0389, -87.9065),
+    ("Madison", 43.0731, -89.4012),
+    ("Detroit", 42.3314, -83.0458),
+    ("Grand Rapids", 42.9634, -85.6681),
+    ("Atlanta", 33.7490, -84.3880),
+    ("Chicago", 41.8781, -87.6298),
 ]
 
 
@@ -162,10 +204,29 @@ def in_twin_cities(location):
     return any(city in loc for city in TWIN_CITIES)
 
 
+def in_minnesota(location):
+    loc = location.lower()
+    return in_twin_cities(location) or "minnesota" in loc or re.search(r"\bmn\b", loc) is not None
+
+
+def wanted_place(location):
+    # Minnesota, fully remote, or a city in one of the PLACES metros.
+    loc = location.lower()
+    if in_minnesota(location):
+        return True
+    if "remote" in loc and "hybrid" not in loc:
+        return True
+    for code, state, cities in PLACES:
+        in_state = state in loc or re.search(r"\b%s\b" % code.lower(), loc) is not None
+        if in_state and any(city in loc for city in cities):
+            return True
+    return False
+
+
 # ---------- one function per firm; each returns a list of job dicts ----------
 
 def apex_jobs():
-    # Newest-first table of all US jobs; scan the first pages and keep MN ones.
+    # Newest-first table of all US jobs; scan the first pages and keep wanted places.
     jobs = []
     row_re = re.compile(
         r'<tr class="(?:odd|even)">.*?href="(/job/[^"]+)".*?>([^<]+)</a>.*?'
@@ -175,14 +236,15 @@ def apex_jobs():
                "?sort=lastposteddesc&page=%d" % page)
         page_html = fetch(url)
         for link, title, city, state, posted in row_re.findall(page_html):
-            if state.strip() != "MN":
+            location = "%s, %s" % (city.strip(), state.strip())
+            if not wanted_place(location):
                 continue
             title = html.unescape(title.strip())
             jobs.append({
                 "id": "apex:" + link,
                 "firm": "Apex Systems",
                 "title": title,
-                "location": city.strip() + ", MN",
+                "location": location,
                 "type": "",
                 "posted": posted.strip(),
                 "contact": "",
@@ -208,7 +270,7 @@ def wordpress_jobs(firm, id_prefix, base_url, pages, real_dates):
             meta = it.get("meta", {})
             location = meta.get("_job_location", "")
             remote = meta.get("_remote_position") == 1
-            if not (in_twin_cities(location) or "minnesota" in location.lower() or remote):
+            if not (wanted_place(location) or remote):
                 continue
             jobs.append({
                 "id": "%s:%s" % (id_prefix, it["id"]),
@@ -231,14 +293,14 @@ def brooksource_jobs():
 
 
 def beacon_hill_jobs():
-    # Newest 300 US jobs (about a week), keep Minnesota ones.
+    # Newest 300 US jobs (about a week), keep wanted places.
     return wordpress_jobs("Beacon Hill", "beaconhill",
                           "https://bhsg.com/jobs", 3, True)
 
 
 def randstad_jobs():
     # Their search page ignores location, so read the newest US computer/IT
-    # jobs (30 per page) from the data the page carries, and keep Minnesota.
+    # jobs (30 per page) from the data the page carries, and keep wanted places.
     jobs = []
     for page in (1, 2, 3, 4):
         url = "https://www.randstadusa.com/jobs/r-computer-and-mathematical-occupations/"
@@ -250,14 +312,15 @@ def randstad_jobs():
             break
         data = json.loads(found.group(1))
         for it in data.get("ecommerce", {}).get("impressions", []):
-            if it.get("region") != "Minnesota":
+            location = "%s, %s" % (it.get("city", ""), it.get("region", ""))
+            if not wanted_place(location):
                 continue
             kinds = it.get("employment_type", "")
             jobs.append({
                 "id": "randstad:%s" % it.get("reference_number"),
                 "firm": "Randstad",
                 "title": it.get("job_title", "").strip(" -"),
-                "location": "%s, MN" % it.get("city", ""),
+                "location": location,
                 "type": "Contract" if "CONTRACTOR" in kinds else "",
                 "posted": it.get("launch_date", ""),
                 "contact": "",
@@ -268,36 +331,62 @@ def randstad_jobs():
 
 
 def experis_jobs():
-    # Same search the Experis site runs: 40 miles around downtown Minneapolis.
-    body = {"filter": {
-        "page": "1", "searchKeyword": "", "searchkeyword": "", "offset": 0,
-        "totalCount": 0, "limit": 100, "haslocation": True, "language": "",
-        "latitude": 44.9778, "longitude": -93.2650, "radius": 40,
-    }}
-    data = json.loads(fetch("https://www.experis.com/api/services/Jobs/searchjobs", body))
+    # Same search the Experis site runs: 40 miles around each metro center.
     jobs = []
-    for it in data.get("jobsItems", []):
-        jobs.append({
-            "id": "experis:%s" % it["jobID"],
-            "firm": "Experis",
-            "title": it.get("jobTitle", ""),
-            "location": it.get("jobLocation", ""),
-            "type": it.get("employmentType") or "",
-            "posted": (it.get("publishfromDate") or "")[:10],
-            "contact": it.get("jobContactEmail") or "",
-            "link": "https://www.experis.com" + it.get("jobURL", ""),
-            "desc": strip_tags(it.get("publicDescription", "")),
-        })
+    for name, lat, lon in METRO_CENTERS:
+        body = {"filter": {
+            "page": "1", "searchKeyword": "", "searchkeyword": "", "offset": 0,
+            "totalCount": 0, "limit": 100, "haslocation": True, "language": "",
+            "latitude": lat, "longitude": lon, "radius": 40,
+        }}
+        try:
+            data = json.loads(fetch("https://www.experis.com/api/services/Jobs/searchjobs", body))
+        except Exception as e:
+            note_problem("fetch:Experis " + name, "Experis (%s): couldn't check (%s)" % (name, e))
+            continue
+        for it in data.get("jobsItems", []):
+            jobs.append(experis_job(it))
     return jobs
 
 
+def experis_job(it):
+    return {
+        "id": "experis:%s" % it["jobID"],
+        "firm": "Experis",
+        "title": it.get("jobTitle", ""),
+        "location": it.get("jobLocation", ""),
+        "type": it.get("employmentType") or "",
+        "posted": (it.get("publishfromDate") or "")[:10],
+        "contact": it.get("jobContactEmail") or "",
+        "link": "https://www.experis.com" + it.get("jobURL", ""),
+        "desc": strip_tags(it.get("publicDescription", "")),
+    }
+
+
+# Robert Half city pages to search, and how many pages (25 jobs each) to read.
+ROBERT_HALF_CITIES = [
+    ("minneapolis-mn", 4), ("chicago-il", 4), ("atlanta-ga", 4), ("milwaukee-wi", 2),
+    ("madison-wi", 2), ("detroit-mi", 2), ("grand-rapids-mi", 2),
+]
+
+
 def robert_half_jobs():
-    # Server-rendered search page for Minneapolis tech jobs, 25 per page.
+    # Server-rendered search pages for tech jobs in each metro, 25 per page.
+    jobs = []
+    for city, pages in ROBERT_HALF_CITIES:
+        try:
+            jobs.extend(robert_half_city(city, pages))
+        except Exception as e:
+            note_problem("fetch:Robert Half " + city, "Robert Half (%s): couldn't check (%s)" % (city, e))
+    return jobs
+
+
+def robert_half_city(city, pages):
     jobs = []
     card_re = re.compile(r'<rhcl-job-card job-id="([^"]+)".*?</rhcl-job-card>', re.S)
-    for page in (1, 2, 3, 4):
-        url = ("https://www.roberthalf.com/us/en/jobs/minneapolis-mn/technology"
-               "?pagenumber=%d" % page)
+    for page in range(1, pages + 1):
+        url = ("https://www.roberthalf.com/us/en/jobs/%s/technology"
+               "?pagenumber=%d" % (city, page))
         page_html = fetch(url)
         cards = list(card_re.finditer(page_html))
         if not cards:
@@ -326,7 +415,18 @@ def robert_half_jobs():
 
 
 def teksystems_jobs():
-    # Same request their search page makes, filtered to Minnesota.
+    # Same request their search page makes, one state at a time
+    # (searching all states at once lets the busiest state crowd out the rest).
+    jobs = []
+    for state in ["Minnesota", "Wisconsin", "Michigan", "Georgia", "Illinois"]:
+        try:
+            jobs.extend(teksystems_state(state))
+        except Exception as e:
+            note_problem("fetch:TEKsystems " + state, "TEKsystems (%s): couldn't check (%s)" % (state, e))
+    return jobs
+
+
+def teksystems_state(state):
     jobs = []
     for start in (0, 50, 100):
         body = {
@@ -336,7 +436,7 @@ def teksystems_jobs():
             "jobs": True, "counts": True, "all_fields": ["state"], "size": 50,
             "clearAll": False, "jdsource": "facets", "isSliderEnable": False,
             "pageId": "page12", "siteType": "external", "keywords": "",
-            "global": True, "selected_fields": {"state": ["Minnesota"]},
+            "global": True, "selected_fields": {"state": [state]},
             "locationData": {},
         }
         data = json.loads(fetch("https://careers.teksystems.com/widgets", body))
@@ -344,12 +444,15 @@ def teksystems_jobs():
         if not items:
             break
         for it in items:
+            location = "%s, %s" % (it.get("city", ""), it.get("state", ""))
+            if not wanted_place(location):
+                continue
             slug = re.sub(r"[^A-Za-z0-9]+", "-", it.get("title", "")).strip("-")
             jobs.append({
                 "id": "tek:" + it["jobId"],
                 "firm": "TEKsystems",
                 "title": it.get("title", ""),
-                "location": "%s, MN" % it.get("city", ""),
+                "location": location,
                 "type": it.get("type") or "",
                 "posted": (it.get("postedDate") or "")[:10],
                 "contact": "",
@@ -362,7 +465,8 @@ def teksystems_jobs():
 
 
 def insight_global_jobs():
-    # Their API can't filter by place, so read the newest 200 US jobs and keep MN.
+    # Their API can't filter by place, so read the newest 200 US jobs and keep
+    # wanted places plus remote ones.
     jobs = []
     for page in (1, 2, 3, 4):
         url = ("https://insightglobal.com/all/jobs?keyword=&page=%d&size=50"
@@ -371,11 +475,11 @@ def insight_global_jobs():
         data = json.loads(fetch(url))
         for it in data.get("jobs", []):
             address = it.get("workAddress") or {}
-            if address.get("administrativeArea") != "MN":
-                continue
-            location = "%s, MN" % address.get("locality", "")
+            location = "%s, %s" % (address.get("locality", ""), address.get("administrativeArea", ""))
             if it.get("workRemote"):
                 location += " (remote)"
+            elif not wanted_place(location):
+                continue
             jobs.append({
                 "id": "insight:" + it["requisitionId"],
                 "firm": "Insight Global",
@@ -410,6 +514,8 @@ def open_db():
     db.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value INTEGER)")
     db.execute("CREATE TABLE IF NOT EXISTS dropped (id TEXT PRIMARY KEY, firm TEXT, "
                "title TEXT, link TEXT, reason TEXT, dropped_at TEXT)")
+    db.execute("CREATE TABLE IF NOT EXISTS alerts (key TEXT PRIMARY KEY, message TEXT, "
+               "count INTEGER, first_at TEXT, last_at TEXT)")
     # keep the dropped log small: forget anything older than 30 days
     db.execute("DELETE FROM dropped WHERE dropped_at < datetime('now', '-30 days')")
     return db
@@ -436,15 +542,101 @@ def show_dropped(db, days=7):
     print("%d dropped in the last %d days" % (len(rows), days))
 
 
-def get_ai_fails(db):
-    row = db.execute("SELECT value FROM state WHERE key = 'ai_fails'").fetchone()
+def get_state(db, key):
+    row = db.execute("SELECT value FROM state WHERE key = ?", (key,)).fetchone()
     if row is None:
         return 0
     return row[0]
 
 
+def set_state(db, key, value):
+    db.execute("INSERT OR REPLACE INTO state VALUES (?, ?)", (key, value))
+
+
+def get_ai_fails(db):
+    return get_state(db, "ai_fails")
+
+
 def set_ai_fails(db, count):
-    db.execute("INSERT OR REPLACE INTO state VALUES ('ai_fails', ?)", (count,))
+    set_state(db, "ai_fails", count)
+
+
+# ---------- problems -> "attention needed" in the next email ----------
+
+PROBLEMS = []   # (key, message) noticed during this run
+
+
+def note_problem(key, message):
+    print("PROBLEM: " + message)
+    PROBLEMS.append((key, message))
+
+
+def save_problems(db):
+    # The same problem again just bumps its count, so repeats don't pile up.
+    for key, message in PROBLEMS:
+        if db.execute("SELECT 1 FROM alerts WHERE key = ?", (key,)).fetchone():
+            db.execute("UPDATE alerts SET message = ?, count = count + 1, "
+                       "last_at = datetime('now') WHERE key = ?", (message, key))
+        else:
+            db.execute("INSERT INTO alerts VALUES (?, ?, 1, datetime('now'), datetime('now'))",
+                       (key, message))
+    del PROBLEMS[:]
+
+
+def pending_alerts(db):
+    return db.execute("SELECT message, count, first_at, last_at FROM alerts "
+                      "ORDER BY first_at").fetchall()
+
+
+def central_time(utc_text):
+    # "2026-11-05 16:00:00" (UTC, from sqlite) -> "Nov 5 10:00 AM"
+    when = datetime.datetime.strptime(utc_text, "%Y-%m-%d %H:%M:%S")
+    when = when.replace(tzinfo=datetime.timezone.utc).astimezone(ZoneInfo("America/Chicago"))
+    return "%s %d %s" % (MONTHS[when.month - 1], when.day, when.strftime("%I:%M %p").lstrip("0"))
+
+
+def alerts_html(rows):
+    if not rows:
+        return ""
+    items = []
+    for message, count, first_at, last_at in rows:
+        when = central_time(first_at)
+        if count > 1:
+            when = "%d times, %s to %s" % (count, when, central_time(last_at))
+        items.append("<li>%s <span style=\"color:#888\">(%s)</span></li>"
+                     % (html.escape(message), when))
+    return ('<div style="font-family:Arial,sans-serif;font-size:14px;border:2px solid #c0392b;'
+            'border-radius:6px;padding:10px 14px;margin-bottom:16px">'
+            '<b style="color:#c0392b">&#9888; Attention needed</b>'
+            '<ul style="margin:6px 0 0 0;padding-left:20px">%s</ul></div>' % "".join(items))
+
+
+def send_pending_alerts(db, now=False):
+    # For problems that didn't ride along on a job email: send them on their
+    # own once the oldest is ALERT_WAIT_HOURS old (or right away if now=True).
+    rows = pending_alerts(db)
+    if not rows:
+        return
+    oldest = datetime.datetime.strptime(rows[0][2], "%Y-%m-%d %H:%M:%S")
+    waited = datetime.datetime.utcnow() - oldest
+    if not now and waited < datetime.timedelta(hours=ALERT_WAIT_HOURS):
+        return
+    send_email("\u26a0 Attention needed: job poller (%d)" % len(rows), alerts_html(rows))
+    db.execute("DELETE FROM alerts")
+    print("Sent attention-needed email.")
+
+
+def check_zero(db, name, count):
+    # A firm that suddenly returns nothing usually means its page changed.
+    key = "zero:" + name
+    if count > 0:
+        set_state(db, key, 0)
+        return
+    runs = get_state(db, key) + 1
+    set_state(db, key, runs)
+    if runs == ZERO_RUNS or (runs > ZERO_RUNS and (runs - ZERO_RUNS) % 48 == 0):
+        note_problem(key, "%s returned 0 jobs for %d runs in a row - its site may have "
+                          "changed and the scraper may need fixing" % (name, runs))
 
 
 def is_seen(db, job_id):
@@ -592,9 +784,12 @@ def ai_review(jobs):
         if describe:
             try:
                 job["desc"] = re.sub(r"\s+", " ", describe(job))[:3000]
-            except Exception:
-                pass
+            except Exception as e:
+                note_problem("describe:" + job["firm"],
+                             "Couldn't read %s job pages for the AI (%s); it judged them "
+                             "from the title only" % (job["firm"], e))
     if not os.environ.get("GEMINI_API_KEY"):
+        note_problem("ai_key", "GEMINI_API_KEY is missing, so the AI check is off")
         return False
     verdicts = {}
     for i in range(0, len(jobs), 15):  # 15 jobs per request keeps it small
@@ -602,7 +797,7 @@ def ai_review(jobs):
             verdicts.update(ask_gemini(jobs[i:i + 15]) or {})
         except Exception as e:
             # Keep the batches that worked; this batch shows up as "maybe".
-            print("AI batch failed (%s)" % e)
+            note_problem("ai_batch", "AI check failed for a batch of jobs (%s)" % e)
     if not verdicts:
         return False
     # The model sometimes leaves a job out; ask once more for just those.
@@ -610,8 +805,9 @@ def ai_review(jobs):
     if missing:
         try:
             verdicts.update(ask_gemini(missing) or {})
-        except Exception:
-            pass
+        except Exception as e:
+            note_problem("ai_missing", "AI left out some jobs and the retry failed (%s); "
+                                       "they show as maybe" % e)
     for job in jobs:
         job["verdict"], job["reason"] = verdicts.get(job["id"], ("maybe", "AI was busy, check this one yourself"))
     return True
@@ -742,16 +938,56 @@ def main():
     if "--dropped" in sys.argv:   # python poller.py --dropped  -> list what was filtered out
         show_dropped(db)
         return
+    emailed = False
+    crashed = False
+    try:
+        emailed = run(db, dry_run)
+    except Exception as e:
+        traceback.print_exc()
+        note_problem("crash:staffing", "Staffing poller crashed: %s: %s" % (type(e).__name__, e))
+        crashed = True
+    if dry_run:
+        return
+    finish_run(db, emailed, crashed, "staffing")
+
+
+def finish_run(db, emailed, crashed, who):
+    # Save this run's problems and send them if no job email carried them.
+    # A crash emails right away the first time; repeats follow the normal wait.
+    streak_key = "crash_streak:" + who
+    streak = get_state(db, streak_key) + 1 if crashed else 0
+    set_state(db, streak_key, streak)
+    save_problems(db)
+    if not emailed:
+        try:
+            send_pending_alerts(db, now=(streak == 1))
+        except Exception as e:
+            print("Could not send attention-needed email (%s)" % e)
+    db.commit()
+
+
+def email_with_alerts(db, subject, body):
+    # Put any saved problems at the top of a job email, then clear them.
+    save_problems(db)
+    rows = pending_alerts(db)
+    if rows:
+        subject = "\u26a0 " + subject
+    send_email(subject, alerts_html(rows) + body)
+    db.execute("DELETE FROM alerts")
+
+
+def run(db, dry_run):
+    # One poll. Returns True if a job email was sent.
     new_jobs = []
-    errors = []
 
     for name, get_jobs in FIRMS:
         try:
             jobs = get_jobs()
         except Exception as e:
-            print("%s: FAILED (%s)" % (name, e))
-            errors.append(name)
+            note_problem("fetch:" + name, "%s: couldn't check (%s)" % (name, e))
             continue
+        if not dry_run:
+            check_zero(db, name, len(jobs))
         good = []
         for j in jobs:
             if too_old(j["posted"]):
@@ -768,18 +1004,17 @@ def main():
             if not is_seen(db, j["id"]) and j["id"] not in already:
                 fresh.append(j)
                 already.add(j["id"])
-        print("%s: %d local jobs, %d fit, %d new" % (name, len(jobs), len(good), len(fresh)))
+        print("%s: %d jobs in wanted places, %d fit, %d new" % (name, len(jobs), len(good), len(fresh)))
         new_jobs.extend(fresh)
 
     if not new_jobs:
-        db.commit()  # save the dropped log
         print("Nothing new.")
-        return
+        return False
 
     try:
         ai_used = ai_review(new_jobs)
     except Exception as e:
-        print("AI check FAILED (%s)" % e)
+        note_problem("ai_crash", "AI check crashed (%s)" % e)
         ai_used = False
 
     # If the AI failed, hold the jobs for the next run instead of sending them
@@ -791,26 +1026,29 @@ def main():
             fails = get_ai_fails(db) + 1
             if fails < MAX_AI_FAILS:
                 set_ai_fails(db, fails)
-                db.commit()
+                note_problem("ai_hold", "AI check failed, so new jobs were held back and "
+                                        "retried on the next run (nothing lost)")
                 print("AI failed (%d in a row) - holding %d jobs for next run"
                       % (fails, len(new_jobs)))
-                return
-            print("AI failed %d runs in a row - sending unfiltered" % fails)
+                return False
+            note_problem("ai_unfiltered", "AI check failed %d runs in a row, so jobs were "
+                                          "sent unfiltered (keyword matches only)" % fails)
             set_ai_fails(db, 0)
 
     good_count = len([j for j in new_jobs if j.get("verdict") != "skip"])
-    body = build_email(new_jobs, errors, ai_used)
-    print("\n" + body)
+    print("\n" + build_email(new_jobs, [], ai_used))
 
     if dry_run:
-        return
+        return False
 
+    emailed = False
     if good_count > 0:
-        subject = "%d new staffing-firm jobs (Twin Cities)" % good_count
+        subject = "%d new staffing-firm jobs" % good_count
         if ai_used:
             applies = len([j for j in new_jobs if j.get("verdict") == "apply"])
             subject = "%d apply / %d new staffing-firm jobs" % (applies, good_count)
-        send_email(subject, build_html(new_jobs, errors, ai_used))
+        email_with_alerts(db, subject, build_html(new_jobs, [], ai_used))
+        emailed = True
         print("\nEmailed.")
     else:
         print("\nAI skipped everything new - no email.")
@@ -818,7 +1056,7 @@ def main():
     log_ai_skips(db, new_jobs)
     for job in new_jobs:
         mark_seen(db, job)
-    db.commit()
+    return emailed
 
 
 if __name__ == "__main__":

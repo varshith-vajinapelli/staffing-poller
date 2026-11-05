@@ -18,6 +18,7 @@ import datetime
 import html
 import json
 import re
+import traceback
 import sys
 
 import poller  # reuse fetch, filters, memory, AI review and email
@@ -260,7 +261,8 @@ def workday_jobs():
         try:
             jobs.extend(workday_jobs_for(company, host, tenant, site))
         except Exception as e:
-            print("Workday %s: FAILED (%s)" % (company, e))
+            poller.note_problem("fetch:Workday " + company,
+                                "Workday %s: couldn't check (%s)" % (company, e))
             errors.append(company)
     return jobs, errors
 
@@ -287,6 +289,21 @@ INTERNSHIP_RULES = """Some jobs are internships (their Location/type line says s
 def main():
     dry_run = "--dry-run" in sys.argv
     db = poller.open_db()
+    emailed = False
+    crashed = False
+    try:
+        emailed = run(db, dry_run)
+    except Exception as e:
+        traceback.print_exc()
+        poller.note_problem("crash:company", "Company poller crashed: %s: %s" % (type(e).__name__, e))
+        crashed = True
+    if dry_run:
+        return
+    poller.finish_run(db, emailed, crashed, "company")
+
+
+def run(db, dry_run):
+    # One poll. Returns True if a job email was sent.
     new_jobs = []
     errors = []
     sources = [
@@ -297,9 +314,11 @@ def main():
         try:
             jobs = get_jobs()
         except Exception as e:
-            print("%s: FAILED (%s)" % (name, e))
+            poller.note_problem("fetch:" + name, "%s: couldn't check (%s)" % (name, e))
             errors.append(name)
             continue
+        if not dry_run:
+            poller.check_zero(db, name, len(jobs))
         print("%s: %d in your regions" % (name, len(jobs)))
         new_jobs.extend(jobs)
 
@@ -335,17 +354,18 @@ def main():
     print("%d new after filters" % len(fresh))
 
     if not fresh:
-        db.commit()  # save the dropped log
         print("Nothing new.")
-        return
+        return False
 
     # Simplify jobs have no description yet: read their pages for the AI.
     for job in fresh:
         if job["id"].startswith("simplify:") and not job["desc"]:
             try:
                 job["desc"] = re.sub(r"\s+", " ", page_text(job))[:3000]
-            except Exception:
-                pass
+            except Exception as e:
+                poller.note_problem("describe:Simplify",
+                                    "Couldn't read some Simplify job pages for the AI (%s); "
+                                    "it judged them from the title only" % e)
 
     for job in fresh:
         job["location"] = "%s · %s" % (job["location"], job["type"])
@@ -354,25 +374,31 @@ def main():
     try:
         ai_used = poller.ai_review(fresh)
     except Exception as e:
-        print("AI check FAILED (%s)" % e)
+        poller.note_problem("ai_crash", "AI check crashed (%s)" % e)
         ai_used = False
+    if not ai_used:
+        poller.note_problem("ai_unfiltered_company", "Company poller: AI check failed, so jobs "
+                                                     "were sent unfiltered (keyword matches only)")
 
     for job in fresh:
         job["type"] = ""  # already shown next to the location
 
     good_count = len([j for j in fresh if j.get("verdict") != "skip"])
-    body = poller.build_html(fresh, errors, ai_used)
-    print("\n" + poller.build_email(fresh, errors, ai_used))
+    body = poller.build_html(fresh, [], ai_used)
+    print("\n" + poller.build_email(fresh, [], ai_used))
 
     if dry_run:
-        return
+        return False
+
+    emailed = False
 
     if good_count > 0:
         subject = "%d new company jobs" % good_count
         if ai_used:
             applies = len([j for j in fresh if j.get("verdict") == "apply"])
             subject = "%d apply / %d new company jobs" % (applies, good_count)
-        poller.send_email(subject, body)
+        poller.email_with_alerts(db, subject, body)
+        emailed = True
         print("\nEmailed.")
     else:
         print("\nAI skipped everything new - no email.")
@@ -380,7 +406,7 @@ def main():
     poller.log_ai_skips(db, fresh)
     for job in fresh:
         poller.mark_seen(db, job)
-    db.commit()
+    return emailed
 
 
 if __name__ == "__main__":
