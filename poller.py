@@ -44,7 +44,6 @@ GOOD_WORDS = [
     "developer", "software", "engineer", "programmer", "web", "application",
     "qa", "quality assurance", "test", "analyst", "data", "it ", "systems",
     "junior", "associate", "automation", "quality engineer", "support",
-    "technician",
     "entry", "intern", "configuration",
     "sdet", "devops", "cloud", "full stack", "full-stack", "backend", "back-end",
     "frontend", "front-end", "machine learning", "robotics", "business intelligence",
@@ -181,7 +180,22 @@ METRO_CENTERS = [
 
 # ---------- small helpers ----------
 
-def fetch(url, data=None, timeout=30):
+def fetch(url, data=None, timeout=30, retry=True):
+    # Job sites sometimes fail for a moment (502, 503, a timeout); wait and try
+    # once more before giving up. Gemini calls pass retry=False - they have their own.
+    try:
+        return fetch_once(url, data, timeout)
+    except urllib.error.HTTPError as e:
+        if not retry or e.code not in (500, 502, 503, 504):
+            raise
+    except (urllib.error.URLError, TimeoutError):
+        if not retry:
+            raise
+    time.sleep(5)
+    return fetch_once(url, data, timeout)
+
+
+def fetch_once(url, data, timeout):
     headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
     body = None
     if data is not None:
@@ -603,8 +617,11 @@ def open_db():
 
 
 def log_dropped(db, job, reason):
-    # Each job is logged once, the first time it is dropped.
-    db.execute("INSERT OR IGNORE INTO dropped VALUES (?, ?, ?, ?, ?, datetime('now'))",
+    # One row per job. If it's dropped again for a different reason (the rules
+    # changed, or the AI judged it), the row shows the newest reason.
+    db.execute("INSERT INTO dropped VALUES (?, ?, ?, ?, ?, datetime('now')) "
+               "ON CONFLICT(id) DO UPDATE SET reason = excluded.reason, "
+               "dropped_at = excluded.dropped_at WHERE dropped.reason != excluded.reason",
                (job["id"], job["firm"], job["title"], job.get("link", ""), reason))
 
 
@@ -862,7 +879,7 @@ def ask_gemini(jobs):
                    % (model, key))
             try:
                 # 3.8 Flash thinks before answering; 30s cut it off, so give it 2 minutes
-                data = json.loads(fetch(url, body, timeout=120))
+                data = json.loads(fetch(url, body, timeout=120, retry=False))
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 print("AI model used: " + model)
                 break
