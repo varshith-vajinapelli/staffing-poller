@@ -772,9 +772,12 @@ For each job below decide:
 - "apply": a new grad with only coursework, projects and TA work could
   realistically meet MOST of the required list. Entry-level wording
   (junior, associate, entry level, 0-2 years, new grad) is a strong signal.
-- "maybe": could work but has a concern (asks 2-3 years, asks for one or two
-  specific tools he hasn't used, unclear stack, or says "no sponsorship now
-  or in the future").
+  A job asking for up to 2 years (including ranges that start at 2, like
+  "2-5 years") is still "apply" when the required skills match his stack -
+  for contract and staffing roles that number is usually flexible.
+- "maybe": could work but has a concern (asks for one or two specific tools
+  he hasn't used, unclear stack, a 2-year ask where the stack only partly
+  matches, or says "no sponsorship now or in the future").
 - "skip": needs 3+ years, senior-level, wrong field, Java REQUIRED as the
   main language with no alternative (a list like "Java, .NET, or OOP" or
   "Python or Java" is fine - C++ counts as OOP), needs
