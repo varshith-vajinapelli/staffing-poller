@@ -376,9 +376,30 @@ def run(db, dry_run):
     except Exception as e:
         poller.note_problem("ai_crash", "AI check crashed (%s)" % e)
         ai_used = False
-    if not ai_used:
-        poller.note_problem("ai_unfiltered_company", "Company poller: AI check failed, so jobs "
-                                                     "were sent unfiltered (keyword matches only)")
+    # If the AI failed, hold the jobs for the next digest instead of sending them
+    # unfiltered. Runs are twice a day, so after 2 failed runs in a row send anyway -
+    # unless Gemini refused for billing, then keep holding until that's fixed.
+    if not dry_run:
+        if ai_used:
+            poller.set_state(db, "ai_fails:company", 0)
+        else:
+            fails = poller.get_state(db, "ai_fails:company") + 1
+            poller.set_state(db, "ai_fails:company", fails)
+            if poller.ai_is_down() or fails < 2:
+                if not poller.ai_is_down():
+                    poller.note_problem("ai_hold_company", "Company poller: AI check failed, so "
+                                        "new jobs were held for the next digest (nothing lost)")
+                print("AI failed - holding %d jobs for the next run" % len(fresh))
+                return False
+            poller.note_problem("ai_unfiltered_company", "Company poller: AI check failed 2 runs "
+                                "in a row, so jobs were sent unfiltered (keyword matches only)")
+            poller.set_state(db, "ai_fails:company", 0)
+
+    # Jobs the AI never judged wait for the next run.
+    held = [j for j in fresh if j.get("verdict") == "hold"]
+    fresh = [j for j in fresh if j.get("verdict") != "hold"]
+    if held:
+        print("Holding %d jobs the AI couldn't check, for the next run" % len(held))
 
     for job in fresh:
         job["type"] = ""  # already shown next to the location

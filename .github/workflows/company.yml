@@ -6,6 +6,12 @@ on:
 permissions:
   contents: write              # needed to save jobs.db back to the repo
 
+# One run at a time: a new run waits for the previous one to finish
+# instead of running alongside it (both would edit jobs.db).
+concurrency:
+  group: company-poller
+  cancel-in-progress: false
+
 jobs:
   digest:
     runs-on: ubuntu-latest

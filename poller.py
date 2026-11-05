@@ -21,7 +21,9 @@ import sqlite3
 import sys
 import time
 import traceback
+import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
 
@@ -423,12 +425,16 @@ ROBERT_HALF_CITIES = [
 
 def robert_half_jobs():
     # Server-rendered search pages for tech jobs in each metro, 25 per page.
+    # Four cities at a time; one by one takes about two minutes.
     jobs = []
-    for city, pages in ROBERT_HALF_CITIES:
-        try:
-            jobs.extend(robert_half_city(city, pages))
-        except Exception as e:
-            note_problem("fetch:Robert Half " + city, "Robert Half (%s): couldn't check (%s)" % (city, e))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        waiting = [(city, pool.submit(robert_half_city, city, pages))
+                   for city, pages in ROBERT_HALF_CITIES]
+        for city, future in waiting:
+            try:
+                jobs.extend(future.result())
+            except Exception as e:
+                note_problem("fetch:Robert Half " + city, "Robert Half (%s): couldn't check (%s)" % (city, e))
     return jobs
 
 
@@ -623,6 +629,11 @@ def note_problem(key, message):
     PROBLEMS.append((key, message))
 
 
+def ai_is_down():
+    # True when Gemini refused this run for a billing / key reason.
+    return any(key == "ai_down" for key, message in PROBLEMS)
+
+
 def save_problems(db):
     # The same problem again just bumps its count, so repeats don't pile up.
     for key, message in PROBLEMS:
@@ -779,6 +790,23 @@ DESCRIBERS = {
 }
 
 
+class AIDown(Exception):
+    # Gemini refused for a reason retrying won't fix (no credit, bad key).
+    pass
+
+
+def gemini_error(e):
+    # Short readable reason, including Gemini's own message when it sends one.
+    text = str(e)
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            detail = json.loads(e.read().decode("utf-8", errors="replace"))
+            text += ": " + detail.get("error", {}).get("message", "")[:200]
+        except Exception:
+            pass
+    return text
+
+
 def ask_gemini(jobs):
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
@@ -804,6 +832,12 @@ def ask_gemini(jobs):
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 print("AI model used: " + model)
                 break
+            except urllib.error.HTTPError as e:
+                reason = gemini_error(e)
+                # 401/402/403: no credit or a bad key - stop now, retrying won't help
+                if e.code in (401, 402, 403):
+                    raise AIDown(reason)
+                print("AI model %s failed (%s), trying next" % (model, reason))
             except Exception as e:
                 print("AI model %s failed (%s), trying next" % (model, e))
         if text is not None:
@@ -834,26 +868,35 @@ def ai_review(jobs):
         note_problem("ai_profile", "CANDIDATE_PROFILE secret is missing, so the AI is "
                                    "screening jobs for a generic new grad")
     verdicts = {}
+    down = False
     for i in range(0, len(jobs), 15):  # 15 jobs per request keeps it small
         if i > 0:
             time.sleep(5)  # stay under Gemini's per-minute limit on big runs
         try:
             verdicts.update(ask_gemini(jobs[i:i + 15]) or {})
+        except AIDown as e:
+            note_problem("ai_down", "Gemini refused the request (%s) - check Gemini "
+                                    "billing / credits in Google AI Studio" % e)
+            down = True
+            break
         except Exception as e:
-            # Keep the batches that worked; this batch shows up as "maybe".
-            note_problem("ai_batch", "AI check failed for a batch of jobs (%s)" % e)
+            # Keep the batches that worked; this batch's jobs are held for the next run.
+            note_problem("ai_batch", "AI check failed for a batch of jobs (%s); those jobs "
+                                     "were held for the next run" % e)
     if not verdicts:
         return False
     # The model sometimes leaves a job out; ask once more for just those.
     missing = [j for j in jobs if j["id"] not in verdicts]
-    if missing:
+    if missing and not down:
         try:
             verdicts.update(ask_gemini(missing) or {})
         except Exception as e:
             note_problem("ai_missing", "AI left out some jobs and the retry failed (%s); "
-                                       "they show as maybe" % e)
+                                       "they were held for the next run" % e)
+    # Jobs the AI never judged are marked "hold": not emailed, not marked as sent,
+    # so the next run tries them again.
     for job in jobs:
-        job["verdict"], job["reason"] = verdicts.get(job["id"], ("maybe", "AI was busy, check this one yourself"))
+        job["verdict"], job["reason"] = verdicts.get(job["id"], ("hold", ""))
     return True
 
 
@@ -1024,9 +1067,13 @@ def run(db, dry_run):
     # One poll. Returns True if a job email was sent.
     new_jobs = []
 
-    for name, get_jobs in FIRMS:
+    # Ask every firm at the same time; each one mostly waits on the network.
+    with ThreadPoolExecutor(max_workers=len(FIRMS)) as pool:
+        waiting = [(name, pool.submit(get_jobs)) for name, get_jobs in FIRMS]
+
+    for name, future in waiting:
         try:
-            jobs = get_jobs()
+            jobs = future.result()
         except Exception as e:
             note_problem("fetch:" + name, "%s: couldn't check (%s)" % (name, e))
             continue
@@ -1068,6 +1115,11 @@ def run(db, dry_run):
             set_ai_fails(db, 0)
         else:
             fails = get_ai_fails(db) + 1
+            # Out of credit / bad key: keep holding (no unfiltered fallback) until it's fixed.
+            if ai_is_down():
+                set_ai_fails(db, fails)
+                print("Gemini refused - holding %d jobs until billing is fixed" % len(new_jobs))
+                return False
             if fails < MAX_AI_FAILS:
                 set_ai_fails(db, fails)
                 note_problem("ai_hold", "AI check failed, so new jobs were held back and "
@@ -1078,6 +1130,11 @@ def run(db, dry_run):
             note_problem("ai_unfiltered", "AI check failed %d runs in a row, so jobs were "
                                           "sent unfiltered (keyword matches only)" % fails)
             set_ai_fails(db, 0)
+
+    held = [j for j in new_jobs if j.get("verdict") == "hold"]
+    new_jobs = [j for j in new_jobs if j.get("verdict") != "hold"]
+    if held:
+        print("Holding %d jobs the AI couldn't check, for the next run" % len(held))
 
     good_count = len([j for j in new_jobs if j.get("verdict") != "skip"])
     print("\n" + build_email(new_jobs, [], ai_used))
