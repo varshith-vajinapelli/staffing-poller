@@ -28,6 +28,7 @@ from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
 
 DB_FILE = "jobs.db"
+DESC_LIMIT = 6000  # characters of each posting the AI reads (requirements come last)
 AI_BATCH = 5       # jobs per AI request; fewer = more careful reading of each job
 MAX_AI_FAILS = 4   # failed AI runs in a row before sending unfiltered (runs are 30 min apart)
 ALERT_WAIT_HOURS = 3   # problems wait this long for a job email before getting their own
@@ -216,7 +217,7 @@ def years_asked(desc):
     # "18 years of age" or "in business for 20 years" are ignored.
     # Anything this misses still goes through the AI check.
     nums = []
-    for m in re.finditer(r"(\d+)\s*\+?\s*(?:-\s*\d+\s*)?years?", desc):
+    for m in re.finditer(r"(\d+)\s*\+?\s*(?:(?:-|–|—|to)\s*\d+\s*\+?\s*)?years?", desc):
         after = desc[m.end():m.end() + 60]
         if "experience" in after or "exp " in after or "exp." in after:
             nums.append(int(m.group(1)))
@@ -825,6 +826,18 @@ def json_description(job):
     return strip_tags(html.unescape(text))
 
 
+def robert_half_description(job):
+    # The search card has the "Description" part only; the job page also has
+    # the "Requirements" part (years, must-have skills). Requirements go first
+    # so they're never cut off.
+    page_html = fetch(job["link"])
+    found = re.search(r'data-testid="job-details-requirements">(.*?)</div>', page_html, re.S)
+    if not found:
+        return job["desc"]
+    requirements = strip_tags(html.unescape(html.unescape(found.group(1))))
+    return "Requirements: " + requirements + " Description: " + job["desc"]
+
+
 def insight_global_description(job):
     req_id = job["id"].split(":", 1)[1]
     data = json.loads(fetch("https://insightglobal.com/all/jobs/%s/details" % req_id))
@@ -837,6 +850,7 @@ DESCRIBERS = {
     "TEKsystems": json_description,
     "Randstad": json_description,
     "Insight Global": insight_global_description,
+    "Robert Half": robert_half_description,
 }
 
 
@@ -863,7 +877,7 @@ def ask_gemini(jobs):
         return None
     parts = []
     for job in jobs:
-        desc = re.sub(r"\s+", " ", job["desc"])[:3000]
+        desc = re.sub(r"\s+", " ", job["desc"])[:DESC_LIMIT]
         parts.append("ID: %s\nTitle: %s\nLocation: %s\nDescription: %s\n"
                      % (job["id"], job["title"], job["location"], desc or "(none)"))
     body = {
@@ -907,7 +921,7 @@ def ai_review(jobs):
         describe = DESCRIBERS.get(job["firm"])
         if describe:
             try:
-                job["desc"] = re.sub(r"\s+", " ", describe(job))[:3000]
+                job["desc"] = re.sub(r"\s+", " ", describe(job))[:DESC_LIMIT]
             except Exception as e:
                 note_problem("describe:" + job["firm"],
                              "Couldn't read %s job pages for the AI (%s); it judged them "

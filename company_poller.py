@@ -379,7 +379,7 @@ def run(db, dry_run):
     for job in fresh:
         if job["id"].startswith("simplify:") and not job["desc"]:
             try:
-                job["desc"] = re.sub(r"\s+", " ", page_text(job))[:3000]
+                job["desc"] = re.sub(r"\s+", " ", page_text(job))[:poller.DESC_LIMIT]
             except Exception:
                 job["desc"] = ""
             # Under ~300 characters means the page was blocked or built by
