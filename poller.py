@@ -857,6 +857,36 @@ DESCRIBERS = {
 }
 
 
+# Price per 1M tokens (input, output incl. thinking), from Google's pricing page.
+# 3.8 Flash doubles on Jan 1, 2027.
+AI_PRICES = {
+    "gemini-3.8-flash": (0.75, 3.75),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+}
+if datetime.date.today() >= datetime.date(2027, 1, 1):
+    AI_PRICES["gemini-3.8-flash"] = (1.50, 7.50)
+
+AI_USAGE = {}   # model -> [input tokens, output tokens, thinking tokens] this run
+
+
+def count_tokens(model, data):
+    usage = data.get("usageMetadata", {})
+    totals = AI_USAGE.setdefault(model, [0, 0, 0])
+    totals[0] += usage.get("promptTokenCount", 0)
+    totals[1] += usage.get("candidatesTokenCount", 0)
+    totals[2] += usage.get("thoughtsTokenCount", 0)
+
+
+def print_ai_usage():
+    # One line per model in the run log, e.g.
+    # "AI usage gemini-3.8-flash: 41,200 in, 2,100 out, 6,900 thinking = ~$0.06"
+    for model, (tokens_in, tokens_out, thinking) in AI_USAGE.items():
+        price_in, price_out = AI_PRICES.get(model, (0, 0))
+        cost = (tokens_in * price_in + (tokens_out + thinking) * price_out) / 1000000
+        print("AI usage %s: {:,} in, {:,} out, {:,} thinking = ~${:.3f}".format(
+            tokens_in, tokens_out, thinking, cost) % model)
+
+
 class AIDown(Exception):
     # Gemini refused for a reason retrying won't fix (no credit, bad key).
     pass
@@ -897,6 +927,7 @@ def ask_gemini(jobs):
             try:
                 # 3.8 Flash thinks before answering; 30s cut it off, so give it 2 minutes
                 data = json.loads(fetch(url, body, timeout=120, retry=False))
+                count_tokens(model, data)
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 print("AI model used: " + model)
                 break
@@ -965,6 +996,7 @@ def ai_review(jobs):
     # so the next run tries them again.
     for job in jobs:
         job["verdict"], job["reason"] = verdicts.get(job["id"], ("hold", ""))
+    print_ai_usage()
     return True
 
 
