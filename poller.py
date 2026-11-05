@@ -110,6 +110,21 @@ PLACES = [
         "hoffman estates", "des plaines", "riverwoods", "bannockburn", "aurora",
         "wheaton", "warrenville", "oak brook", "glenview", "arlington heights",
         "rolling meadows", "vernon hills", "mettawa", "westchester", "cary"]),
+    ("TX", "texas", [
+        # Austin
+        "austin", "round rock", "cedar park", "georgetown", "pflugerville", "leander",
+        "san marcos", "kyle",
+        # Dallas - Fort Worth
+        "dallas", "fort worth", "plano", "irving", "frisco", "richardson", "addison",
+        "arlington", "carrollton", "lewisville", "mckinney", "allen", "grapevine",
+        "coppell", "the colony", "southlake", "denton", "garland", "farmers branch",
+        "las colinas", "westlake", "mesquite", "grand prairie", "flower mound",
+        # Houston
+        "houston", "the woodlands", "sugar land", "katy", "spring", "pearland",
+        "cypress", "humble", "conroe", "stafford", "bellaire", "pasadena",
+        "missouri city", "tomball", "league city", "webster", "baytown",
+        # San Antonio
+        "san antonio", "new braunfels", "schertz", "boerne", "live oak"]),
 ]
 
 # Center points for searches that take a location (40-mile radius around each).
@@ -121,6 +136,11 @@ METRO_CENTERS = [
     ("Grand Rapids", 42.9634, -85.6681),
     ("Atlanta", 33.7490, -84.3880),
     ("Chicago", 41.8781, -87.6298),
+    ("Austin", 30.2672, -97.7431),
+    ("Dallas", 32.7767, -96.7970),
+    ("Fort Worth", 32.7555, -97.3308),
+    ("Houston", 29.7604, -95.3698),
+    ("San Antonio", 29.4241, -98.4936),
 ]
 
 
@@ -367,6 +387,8 @@ def experis_job(it):
 ROBERT_HALF_CITIES = [
     ("minneapolis-mn", 4), ("chicago-il", 4), ("atlanta-ga", 4), ("milwaukee-wi", 2),
     ("madison-wi", 2), ("detroit-mi", 2), ("grand-rapids-mi", 2),
+    ("dallas-tx", 4), ("houston-tx", 4), ("austin-tx", 4), ("fort-worth-tx", 2),
+    ("san-antonio-tx", 2),
 ]
 
 
@@ -418,7 +440,7 @@ def teksystems_jobs():
     # Same request their search page makes, one state at a time
     # (searching all states at once lets the busiest state crowd out the rest).
     jobs = []
-    for state in ["Minnesota", "Wisconsin", "Michigan", "Georgia", "Illinois"]:
+    for state in ["Minnesota", "Wisconsin", "Michigan", "Georgia", "Illinois", "Texas"]:
         try:
             jobs.extend(teksystems_state(state))
         except Exception as e:
