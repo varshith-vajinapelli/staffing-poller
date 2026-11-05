@@ -1,9 +1,7 @@
 name: Staffing job poller
 
 on:
-  schedule:
-    - cron: "7,37 * * * *"  # every 30 minutes, off GitHub's busy :00/:30 minutes
-  workflow_dispatch:         # lets you run it by hand from the Actions tab
+  workflow_dispatch:   # started every 30 minutes by cron-job.org (and the Run workflow button)
 
 permissions:
   contents: write            # needed to save jobs.db back to the repo
