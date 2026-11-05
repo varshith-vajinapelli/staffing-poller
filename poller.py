@@ -746,8 +746,18 @@ Do NOT mark "apply" just because a skill word (Linux, Python, SQL) appears in
 both the job and the candidate profile; judge the depth the job requires.
 Software testing / QA / test analyst roles count as engineering roles he
 wants, even if the title also says "analyst" or "BA".
+"Wrong field" (skip) includes jobs with no hands-on technical work that only
+share a word like "analyst" or "engineer" with tech jobs: logistics /
+transportation / supply-chain analyst, financial or accounting analyst,
+business operations, a business analyst who only gathers requirements (no
+testing, data or coding work), customer service, and hardware / data-center
+technician roles.
+If the job requires experience in a specific industry domain (for example
+derivatives trading, fixed income, insurance claims systems), mark it "maybe",
+not "apply".
 If you are unsure between "apply" and "skip", choose "maybe". Only "skip"
-when there is a clear blocker.
+when there is a clear blocker - missing a good job is worse than showing a
+borderline one.
 
 Return ONLY a JSON list, one object per job, in this form:
 [{"id": "<job id>", "verdict": "apply|maybe|skip", "reason": "<under 15 words>"}]
