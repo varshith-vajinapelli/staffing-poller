@@ -74,7 +74,7 @@ def company_title_ok(title):
     return not any(w in t for w in COMPANY_BAD_WORDS)
 
 
-# ---------- where Sai wants to work ----------
+# ---------- places to keep ----------
 
 SOUTH_STATES = {
     "TX": "texas", "GA": "georgia", "TN": "tennessee", "NC": "north carolina",
@@ -278,7 +278,7 @@ def page_text(job):
 INTERNSHIP_RULES = """Some jobs are internships (their Location/type line says so). For those:
 - Twin Cities internships are fine in any season.
 - Internships elsewhere are only fine if they start before Summer 2027.
-- He graduates December 2026, so internships that require being a
+- If the profile gives a graduation date, internships that require being a
   current student AFTER that date are a concern ("maybe"), not a blocker,
   unless the posting says graduates are not eligible ("skip").
 """

@@ -445,9 +445,8 @@
       '"I am not a protected veteran", "I don\'t wish to answer").\n' +
       '- For a resume/CV file upload, value "RESUME". For any other file upload ' +
       '(cover letter, transcript, portfolio), skip it.\n' +
-      '- Work authorization: he IS authorized to work in the US now (F-1 OPT, STEM-eligible). ' +
-      'He WILL need sponsorship in the future. Answer every sponsorship question truthfully ' +
-      'with that. Never claim citizenship or a green card.\n' +
+      '- Work authorization and sponsorship questions: answer truthfully from the profile\'s ' +
+      '"workAuth". Never claim citizenship or a green card unless workAuth says so.\n' +
       '- Veteran status: he is not a veteran ("I am not a protected veteran"). Gender, race, ' +
       'ethnicity, disability and other voluntary questions: the decline / prefer not to say option.\n' +
       '- Yes/no questions about non-competes, prior employment at this company, relatives ' +

@@ -6,41 +6,28 @@ var FIELDS = ['firstName', 'lastName', 'preferredName', 'email', 'phone', 'city'
   'savedAnswers',
   'about', 'voice'];
 
-// Starting values; edit them on the page.
+// Starting values (blank on purpose - fill yours in on the Settings page;
+// what you save there is kept in your browser, not in this repo).
 var DEFAULTS = {
-  firstName: 'Varshith', lastName: 'Vajinapelli', preferredName: 'Sai',
-  email: 'varshith.vajinapelli@gmail.com',
-  city: 'Minneapolis', state: 'Minnesota', country: 'United States',
-  linkedin: 'https://www.linkedin.com/in/varshith-vajinapelli',
-  github: 'https://github.com/varshith-vajinapelli',
-  school: 'University of Minnesota, Twin Cities', degree: "Bachelor's",
-  major: 'Computer Science', graduation: 'December 2026',
-  relocate: 'Yes, anywhere in the US', startDate: 'January 2027',
+  firstName: '', lastName: '', preferredName: '',
+  email: '',
+  city: '', state: '', country: 'United States',
+  linkedin: '',
+  github: '',
+  school: '', degree: '',
+  major: '', graduation: '',
+  relocate: '', startDate: '',
   howHeard: 'Online job board',
   savedAnswers:
-    'Willing to relocate / currently local? -> Not local, but willing to relocate anywhere in the US.\n' +
     'Non-compete or contract restrictions? -> No\n' +
     'Ever worked for or contracted with this company? -> No\n' +
     'Referred by an employee? -> (leave blank)\n' +
     'Relatives working here? -> No\n' +
     'At least 18 years old? -> Yes\n' +
-    'Can you pass a background check / drug test? -> Yes\n' +
-    'Willing to work onsite / hybrid? -> Yes\n' +
     'Veteran status -> I am not a protected veteran',
-  workAuth: 'Authorized to work in the US now on F-1 OPT (STEM OPT eligible, up to 3 years ' +
-            'with no sponsorship needed to start). Will require H-1B sponsorship in the future. ' +
-            'Not a US citizen or permanent resident.',
-  about: 'Skills: C++, C, Python, JavaScript, SQL, Linux, Git, GitHub Actions. No Java.\n' +
-         'Undergraduate TA for CSCI 3081W (C++ program design) and CSCI 1133 (intro Python); ' +
-         'wrote two of the course labs.\n' +
-         'Undergraduate research: StreamPeer, a C++ peer-to-peer audio/video streaming system.\n' +
-         'GopherEvents: shipped full-stack web app.\n' +
-         'Built a job-alert system: Python pollers on GitHub Actions that pull job APIs and use ' +
-         'an LLM to screen postings, plus Google Apps Script automations.\n' +
-         'Open-source contributions to Wikimedia.\n' +
-         'Interests: backend and systems engineering. Motivated by new challenges.',
-  voice: 'Warm, natural and a little poetic, but concise and concrete. Sounds like a real ' +
-         'person, not a template.'
+  workAuth: '',
+  about: '',
+  voice: 'Warm, natural and concise. Sounds like a real person, not a template.'
 };
 
 async function load() {

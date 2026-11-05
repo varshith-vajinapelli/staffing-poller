@@ -22,6 +22,7 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CANDIDATE_PROFILE: ${{ secrets.CANDIDATE_PROFILE }}
         run: python company_poller.py
 
       - name: Save what was already sent

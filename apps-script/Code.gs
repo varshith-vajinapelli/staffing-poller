@@ -1,5 +1,5 @@
 /**
- * Sai's Google automations (Google Apps Script, runs on Google's servers).
+ * Google automations (Google Apps Script, runs on Google's servers).
  *
  *  syncTracker()  - twice a day: reads job emails in Gmail and updates the
  *                   Job_Application_Tracker sheet (new applications, rejections,

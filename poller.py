@@ -706,24 +706,11 @@ def mark_seen(db, job):
 # hits its free daily limit or fails.
 GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
 
-CANDIDATE = """
-Candidate:
-- Computer Science new grad, University of Minnesota, graduating December 2026.
-- Strong in C++, C, Python; full-stack web (JavaScript); Linux user (not a
-  sysadmin); SQL basics; Git; GitHub Actions.
-- Has NO Java experience. No industry internship.
-- Experience: undergrad TA for C++ (software design) and intro Python courses;
-  undergrad research on a C++ peer-to-peer audio/video streaming system.
-- Projects: GopherEvents (shipped full-stack web app); a job-alert tool that
-  polls job APIs on GitHub Actions and uses an LLM to screen postings;
-  open-source contributions to Wikimedia.
-- Long-term interest: backend / systems engineering.
-- Work authorization: F-1 OPT from January 2027 with STEM extension = can work
-  up to 3 years with NO sponsorship needed. Cannot take roles that require US
-  citizenship, a green card, or a security clearance.
-- Wants software / QA / test / data / IT roles. Contract or contract-to-hire
-  is fine. Does NOT want help desk or desktop support roles; mark those
-  "skip" even if entry-level.
+# The candidate's background comes from the CANDIDATE_PROFILE secret, so personal
+# details stay out of this public repo. Without it, the AI screens for a generic new grad.
+CANDIDATE = os.environ.get("CANDIDATE_PROFILE") or """
+Candidate: an entry-level software engineer (new grad). No profile was given,
+so judge for a typical new grad.
 """
 
 PROMPT = """You screen job postings for one candidate.
@@ -738,7 +725,7 @@ For each job below decide:
   or in the future").
 - "skip": needs 3+ years, senior-level, wrong field, Java REQUIRED as the
   main language with no alternative (a list like "Java, .NET, or OOP" or
-  "Python or Java" is fine - his C++ counts as OOP), needs
+  "Python or Java" is fine - C++ counts as OOP), needs
   citizenship / green card / clearance, OR the required list is mostly
   specialist hands-on experience a new grad won't have (words like "deep",
   "extensive", "expert", "proven", or several named enterprise tools/products
@@ -843,6 +830,9 @@ def ai_review(jobs):
     if not os.environ.get("GEMINI_API_KEY"):
         note_problem("ai_key", "GEMINI_API_KEY is missing, so the AI check is off")
         return False
+    if not os.environ.get("CANDIDATE_PROFILE"):
+        note_problem("ai_profile", "CANDIDATE_PROFILE secret is missing, so the AI is "
+                                   "screening jobs for a generic new grad")
     verdicts = {}
     for i in range(0, len(jobs), 15):  # 15 jobs per request keeps it small
         if i > 0:
