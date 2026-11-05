@@ -28,6 +28,7 @@ from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
 
 DB_FILE = "jobs.db"
+AI_BATCH = 5       # jobs per AI request; fewer = more careful reading of each job
 MAX_AI_FAILS = 4   # failed AI runs in a row before sending unfiltered (runs are 30 min apart)
 ALERT_WAIT_HOURS = 3   # problems wait this long for a job email before getting their own
 ZERO_RUNS = 12         # a firm with 0 jobs this many runs in a row (6 hours) gets flagged
@@ -880,11 +881,11 @@ def ai_review(jobs):
                                    "screening jobs for a generic new grad")
     verdicts = {}
     down = False
-    for i in range(0, len(jobs), 15):  # 15 jobs per request keeps it small
+    for i in range(0, len(jobs), AI_BATCH):
         if i > 0:
             time.sleep(5)  # stay under Gemini's per-minute limit on big runs
         try:
-            verdicts.update(ask_gemini(jobs[i:i + 15]) or {})
+            verdicts.update(ask_gemini(jobs[i:i + AI_BATCH]) or {})
         except AIDown as e:
             note_problem("ai_down", "Gemini refused the request (%s) - check Gemini "
                                     "billing / credits in Google AI Studio" % e)
