@@ -125,6 +125,28 @@ PLACES = [
         "missouri city", "tomball", "league city", "webster", "baytown",
         # San Antonio
         "san antonio", "new braunfels", "schertz", "boerne", "live oak"]),
+    ("AZ", "arizona", [   # Phoenix
+        "phoenix", "scottsdale", "tempe", "chandler", "mesa", "gilbert", "glendale",
+        "peoria", "goodyear", "tolleson", "surprise", "avondale"]),
+    ("NC", "north carolina", [
+        # Charlotte
+        "charlotte", "matthews", "huntersville", "concord", "mooresville", "cornelius",
+        "pineville", "indian trail",
+        # Raleigh - Durham
+        "raleigh", "durham", "cary", "morrisville", "research triangle", "rtp",
+        "chapel hill", "apex", "wake forest", "garner", "holly springs"]),
+    ("OH", "ohio", [   # Columbus
+        "columbus", "dublin", "westerville", "worthington", "hilliard", "grove city",
+        "new albany", "gahanna", "reynoldsburg", "lewis center", "delaware", "polaris"]),
+    ("MO", "missouri", [   # Kansas City, Missouri side
+        "kansas city", "north kansas city", "lee's summit", "lees summit",
+        "independence", "liberty", "riverside", "blue springs"]),
+    ("KS", "kansas", [   # Kansas City, Kansas side
+        "kansas city", "overland park", "olathe", "lenexa", "leawood", "shawnee",
+        "merriam", "mission"]),
+    ("TN", "tennessee", [   # Nashville
+        "nashville", "franklin", "brentwood", "murfreesboro", "smyrna", "hendersonville",
+        "mount juliet", "mt. juliet", "antioch", "la vergne", "gallatin"]),
 ]
 
 # Center points for searches that take a location (40-mile radius around each).
@@ -141,6 +163,12 @@ METRO_CENTERS = [
     ("Fort Worth", 32.7555, -97.3308),
     ("Houston", 29.7604, -95.3698),
     ("San Antonio", 29.4241, -98.4936),
+    ("Phoenix", 33.4484, -112.0740),
+    ("Charlotte", 35.2271, -80.8431),
+    ("Raleigh", 35.7796, -78.6382),
+    ("Columbus", 39.9612, -82.9988),
+    ("Kansas City", 39.0997, -94.5786),
+    ("Nashville", 36.1627, -86.7816),
 ]
 
 
@@ -388,7 +416,8 @@ ROBERT_HALF_CITIES = [
     ("minneapolis-mn", 4), ("chicago-il", 4), ("atlanta-ga", 4), ("milwaukee-wi", 2),
     ("madison-wi", 2), ("detroit-mi", 2), ("grand-rapids-mi", 2),
     ("dallas-tx", 4), ("houston-tx", 4), ("austin-tx", 4), ("fort-worth-tx", 2),
-    ("san-antonio-tx", 2),
+    ("san-antonio-tx", 2), ("phoenix-az", 4), ("charlotte-nc", 4), ("raleigh-nc", 2),
+    ("columbus-oh", 2), ("kansas-city-mo", 2), ("nashville-tn", 2),
 ]
 
 
@@ -440,7 +469,8 @@ def teksystems_jobs():
     # Same request their search page makes, one state at a time
     # (searching all states at once lets the busiest state crowd out the rest).
     jobs = []
-    for state in ["Minnesota", "Wisconsin", "Michigan", "Georgia", "Illinois", "Texas"]:
+    for state in ["Minnesota", "Wisconsin", "Michigan", "Georgia", "Illinois", "Texas",
+                  "Arizona", "North Carolina", "Ohio", "Missouri", "Kansas", "Tennessee"]:
         try:
             jobs.extend(teksystems_state(state))
         except Exception as e:
@@ -815,6 +845,8 @@ def ai_review(jobs):
         return False
     verdicts = {}
     for i in range(0, len(jobs), 15):  # 15 jobs per request keeps it small
+        if i > 0:
+            time.sleep(5)  # stay under Gemini's per-minute limit on big runs
         try:
             verdicts.update(ask_gemini(jobs[i:i + 15]) or {})
         except Exception as e:
