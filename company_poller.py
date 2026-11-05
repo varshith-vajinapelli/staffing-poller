@@ -54,6 +54,7 @@ TECH_WORDS = [
     " ml ", " ai ", "ai/", "qa", "quality assurance", "test", "automation",
     "full-stack", "full stack", "frontend", "front-end", "backend", "back-end",
     "web", "cloud", "devops", "platform", "application", "computer",
+    " it ", "business intelligence", "quantitative", "quant ", "sdet", "robotics",
 ]
 
 # Company titles with any of these are skipped.
@@ -62,7 +63,7 @@ COMPANY_BAD_WORDS = [
     "designer", "clinical", "toll", "sports", "gis", "geographic", "credit risk",
     "financial", "editorial", "psqr", "construction", "cost engineer",
     "mechanical", "electrical", "process engineer", "manufacturing", "chemical",
-    "supply chain", "operations analyst", "business operations analyst",
+    "operations analyst", "business operations analyst",
     "hubspot", "recruit", "accountant", "actuar", "bim",
 ]
 

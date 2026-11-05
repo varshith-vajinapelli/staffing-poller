@@ -46,20 +46,24 @@ GOOD_WORDS = [
     "junior", "associate", "automation", "quality engineer", "support",
     "technician",
     "entry", "intern", "configuration",
+    "sdet", "devops", "cloud", "full stack", "full-stack", "backend", "back-end",
+    "frontend", "front-end", "machine learning", "robotics", "business intelligence",
+    "quantitative", "technology leadership", "rotational", "new grad", "graduate",
+    "early career",
 ]
 
 # Title containing any of these is skipped (too senior or wrong stack).
 BAD_WORDS = [
-    "senior", "sr.", "sr ", "lead", "principal", "manager", "director",
-    "architect", "staff ", "head of", " iii", " iv", " 3", " 4", " 5",
+    "senior", "sr.", "sr ", " lead ", " lead,", " lead/", " lead-", "(lead", "principal", "manager", "director",
+    "architect", "staff ", "head of",
     "java", "cobol", "mainframe", "salesforce", "servicenow", "sap ",
     "workday", "oracle", "dynamics", "nurse", "medical rep", "accountant",
     "payroll", "recruiter",
     # non-software fields that share words like "engineer" / "technician"
-    "lab ", "laboratory", "manufacturing", "mechanical", "materials",
+    "lab technician", "laboratory", "manufacturing", "mechanical", "materials",
     "medical device", "hardware", "failure analysis", "supplier",
-    "surveillance", "compliance", "project engineer", "design engineer",
-    "engineering technician", "repair", "r&d", "accounts payable",
+    "surveillance", "project engineer", "design engineer",
+    "engineering technician", "repair", "accounts payable",
     "stockroom", "quality technician", "qa technician", "penetration",
     # help desk / desktop support roles
     "help desk", "helpdesk", "desktop support", "service desk",
@@ -236,6 +240,12 @@ def drop_reason(title, desc=""):
     for w in BAD_WORDS:
         if w in t2:
             return "title word: %s" % w.strip()
+    # Level III / IV / 3 / 4 / 5 right after the role ("Software Engineer III",
+    # "IT Analyst 3") is mid/senior; a number elsewhere ("4 days on-site") is not.
+    level = re.search(r"(engineer|developer|analyst|programmer|specialist|tester|"
+                      r"administrator|consultant)\s*(iii|iv|3|4|5)\b", t2)
+    if level:
+        return "title level: %s" % level.group(2)
     d = desc.lower()
     for w in BAD_DESC:
         if w in d:
