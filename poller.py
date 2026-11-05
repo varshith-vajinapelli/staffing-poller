@@ -34,7 +34,7 @@ ZERO_RUNS = 12         # a firm with 0 jobs this many runs in a row (6 hours) ge
 
 # Only show jobs posted within this many days. Change this number to adjust.
 # (Brooksource has no real post date, so its jobs are never dropped by age.)
-MAX_AGE_DAYS = 7
+MAX_AGE_DAYS = 3
 USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
 
