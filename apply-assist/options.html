@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Apply Assist settings</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px;
+           font-size: 14px; color: #222; }
+    h1 { font-size: 22px; } h2 { font-size: 16px; margin-top: 28px; }
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    input, textarea, select { width: 100%; padding: 7px; margin-top: 4px; box-sizing: border-box;
+                              font: 14px Arial; }
+    textarea { height: 110px; }
+    .row { display: flex; gap: 12px; } .row > div { flex: 1; }
+    .hint { color: #666; font-weight: normal; font-size: 12px; }
+    button { margin-top: 24px; padding: 10px 24px; font-size: 15px; background: #1a73e8;
+             color: white; border: none; border-radius: 6px; cursor: pointer; }
+    #saved { margin-left: 12px; color: #188038; }
+  </style>
+</head>
+<body>
+  <h1>Apply Assist settings</h1>
+  <p class="hint">Everything here stays in this browser only. It is sent to Gemini only when
+    you click "Fill application" on a job page.</p>
+
+  <h2>Contact</h2>
+  <div class="row">
+    <div><label>First name<input id="firstName"></label></div>
+    <div><label>Last name<input id="lastName"></label></div>
+    <div><label>Preferred name<input id="preferredName"></label></div>
+  </div>
+  <div class="row">
+    <div><label>Email<input id="email"></label></div>
+    <div><label>Phone<input id="phone"></label></div>
+  </div>
+  <div class="row">
+    <div><label>City<input id="city"></label></div>
+    <div><label>State<input id="state"></label></div>
+    <div><label>ZIP<input id="zip"></label></div>
+    <div><label>Country<input id="country"></label></div>
+  </div>
+  <div class="row">
+    <div><label>LinkedIn<input id="linkedin"></label></div>
+    <div><label>GitHub<input id="github"></label></div>
+    <div><label>Website<input id="website"></label></div>
+  </div>
+
+  <h2>Education</h2>
+  <div class="row">
+    <div><label>School<input id="school"></label></div>
+    <div><label>Degree<input id="degree"></label></div>
+  </div>
+  <div class="row">
+    <div><label>Major<input id="major"></label></div>
+    <div><label>Graduation (month year)<input id="graduation"></label></div>
+    <div><label>GPA<input id="gpa"></label></div>
+  </div>
+
+  <h2>Standard answers</h2>
+  <div class="row">
+    <div><label>Willing to relocate<input id="relocate"></label></div>
+    <div><label>Earliest start date<input id="startDate"></label></div>
+  </div>
+  <div class="row">
+    <div><label>How did you hear about us<input id="howHeard"></label></div>
+    <div><label>Desired pay <span class="hint">(leave empty to always mark it yellow)</span>
+      <input id="salary"></label></div>
+  </div>
+  <label>Work authorization <span class="hint">(used for every sponsorship question)</span>
+    <textarea id="workAuth" style="height:60px"></textarea></label>
+
+  <h2>About you (what the AI uses for open questions)</h2>
+  <label>Experience, projects and skills
+    <textarea id="about" style="height:170px"></textarea></label>
+  <label>Your writing voice
+    <textarea id="voice" style="height:60px"></textarea></label>
+
+  <h2>Resume</h2>
+  <label>Resume PDF <span class="hint" id="resumeName"></span>
+    <input type="file" id="resume" accept=".pdf,.doc,.docx"></label>
+
+  <h2>Gemini</h2>
+  <label>Gemini API key<input id="geminiKey" type="password"></label>
+
+  <button id="save">Save</button><span id="saved"></span>
+  <script src="options.js"></script>
+</body>
+</html>
