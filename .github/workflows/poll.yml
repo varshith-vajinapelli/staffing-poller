@@ -2,7 +2,7 @@ name: Staffing job poller
 
 on:
   schedule:
-    - cron: "*/30 * * * *"  # every 30 minutes (fits the free private-repo minutes)
+    - cron: "7,37 * * * *"  # every 30 minutes, off GitHub's busy :00/:30 minutes
   workflow_dispatch:         # lets you run it by hand from the Actions tab
 
 permissions:
