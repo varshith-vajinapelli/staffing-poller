@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Apply Assist",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Fills job applications with your profile and AI-written answers. You review and click Submit.",
   "permissions": ["storage", "scripting", "activeTab", "unlimitedStorage"],
   "host_permissions": ["<all_urls>"],

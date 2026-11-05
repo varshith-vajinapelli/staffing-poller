@@ -19,6 +19,12 @@ button.addEventListener('click', async function () {
   statusBox.textContent = 'Filling... watch the page.';
   try {
     // Run in every frame: many job sites put the form inside an iframe.
+    // The helper runs in the page's own world so it can work React dropdowns.
+    await chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id, allFrames: true },
+      files: ['page-helper.js'],
+      world: 'MAIN'
+    });
     await chrome.scripting.executeScript({
       target: { tabId: tabs[0].id, allFrames: true },
       files: ['content.js']

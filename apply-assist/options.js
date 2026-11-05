@@ -3,6 +3,7 @@
 var FIELDS = ['firstName', 'lastName', 'preferredName', 'email', 'phone', 'city', 'state',
   'zip', 'country', 'linkedin', 'github', 'website', 'school', 'degree', 'major',
   'graduation', 'gpa', 'relocate', 'startDate', 'howHeard', 'salary', 'workAuth',
+  'savedAnswers',
   'about', 'voice'];
 
 // Starting values; edit them on the page.
@@ -16,6 +17,16 @@ var DEFAULTS = {
   major: 'Computer Science', graduation: 'December 2026',
   relocate: 'Yes, anywhere in the US', startDate: 'January 2027',
   howHeard: 'Online job board',
+  savedAnswers:
+    'Willing to relocate / currently local? -> Not local, but willing to relocate anywhere in the US.\n' +
+    'Non-compete or contract restrictions? -> No\n' +
+    'Ever worked for or contracted with this company? -> No\n' +
+    'Referred by an employee? -> (leave blank)\n' +
+    'Relatives working here? -> No\n' +
+    'At least 18 years old? -> Yes\n' +
+    'Can you pass a background check / drug test? -> Yes\n' +
+    'Willing to work onsite / hybrid? -> Yes\n' +
+    'Veteran status -> I am not a protected veteran',
   workAuth: 'Authorized to work in the US now on F-1 OPT (STEM OPT eligible, up to 3 years ' +
             'with no sponsorship needed to start). Will require H-1B sponsorship in the future. ' +
             'Not a US citizen or permanent resident.',
