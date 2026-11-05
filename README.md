@@ -50,3 +50,16 @@ Edit the word lists at the top of `poller.py`:
 - `GOOD_WORDS`: a title needs one of these
 - `BAD_WORDS`: a title with any of these is skipped
 - `BAD_DESC`: a description with any of these is skipped
+
+# Google Apps Script (apps-script/)
+
+Runs inside Google, independent of Claude and GitHub:
+
+- `syncTracker`: 1:43 PM and 8:43 PM Central, reads job emails and updates the
+  Job_Application_Tracker sheet. Silent.
+- `dailyLeetCode`: 7:37 AM Central, emails the next problem from the
+  "NeetCode Daily Plan" sheet.
+
+Setup: script.google.com -> New project -> paste `Code.gs` (and `appsscript.json`
+via Project Settings -> "Show appsscript.json") -> Project Settings -> Script
+Properties -> add `GEMINI_API_KEY` -> run `setup()` once and approve.
