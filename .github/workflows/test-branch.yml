@@ -1,0 +1,21 @@
+name: Test branch check
+
+on:
+  push:
+    branches: [test-ai]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests
+        run: python -m unittest discover tests -v
+      - name: Live Accenture job through Gemini
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CANDIDATE_PROFILE: ${{ secrets.CANDIDATE_PROFILE }}
+        run: python tools/check_job.py "https://accenture.wd103.myworkdayjobs.com/AccentureCareers/job/Charlotte-1120-S-Tryon-St-Corp/Test-Automation-Engineer---6596991_14913857" Accenture
