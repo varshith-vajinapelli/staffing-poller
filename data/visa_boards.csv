@@ -1,0 +1,65 @@
+rank,company,system,board
+15,"Databricks, Inc.",greenhouse,databricks
+18,NVIDIA Corporation,workday,nvidia.wd5.myworkdayjobs.com|nvidia|NVIDIAExternalCareerSite
+19,"Cisco Systems, Inc.",workday,cisco.wd5.myworkdayjobs.com|cisco|cisco_careers
+20,"Salesforce, Inc.",workday,salesforce.wd12.myworkdayjobs.com|salesforce|External_Career_Site
+28,Adobe Inc.,workday,adobe.wd5.myworkdayjobs.com|adobe|external_experienced
+30,ByteDance Inc.,smartrecruiters,bytedance
+33,Wayfair LLC,smartrecruiters,wayfair
+34,"Pinterest, Inc.",greenhouse,pinterest
+35,PALANTIR TECHNOLOGIES INC.,smartrecruiters,palantir
+36,"Social Finance, LLC",greenhouse,socialfinance
+38,Zoox Inc.,lever,zoox
+39,"SQUAD SOFTWARE, INC.",greenhouse,squad
+47,"Capital One, National Association",workday,capitalone.wd12.myworkdayjobs.com|capitalone|Capital_One
+48,Morgan Stanley Services Group Inc.,workday,ms.wd5.myworkdayjobs.com|ms|External
+51,Waymo LLC,greenhouse,waymo
+54,Snowflake Inc.,ashby,snowflake
+55,"Expedia, Inc.",workday,expedia.wd108.myworkdayjobs.com|expedia|private
+62,Visa U.S.A. Inc.,workday,visa.wd5.myworkdayjobs.com|visa|Visa
+64,"Samsung Semiconductor, Inc.",workday,sec.wd3.myworkdayjobs.com|sec|Samsung_Careers
+67,"DoorDash, Inc.",greenhouse,doordashusa
+70,PricewaterhouseCoopers Advisory Services LLC,workday,pwc.wd3.myworkdayjobs.com|pwc|Global_Campus_Careers
+74,HP Inc.,workday,hp.wd5.myworkdayjobs.com|hp|externalcareersite
+75,LinkedIn Corporation,smartrecruiters,LinkedIn3
+77,Bloomberg L.P.,workday,bloomberg.wd1.myworkdayjobs.com|bloomberg|Bloombergindustrygroup_External_Career_Site
+79,"Workday, Inc.",workday,workday.wd5.myworkdayjobs.com|workday|Workday_Early_Career
+85,"ServiceNow, Inc.",smartrecruiters,ServiceNow
+86,"Jane Street Group, LLC",greenhouse,janestreet
+89,The University of Chicago,workday,uchicago.wd5.myworkdayjobs.com|uchicago|External
+93,"MONGODB, INC.",greenhouse,mongodb
+94,"Anthropic, PBC",greenhouse,anthropic
+96,"Synechron, Inc.",workday,synechron.wd1.myworkdayjobs.com|synechron|SynechronCareers
+103,Collabera LLC,smartrecruiters,Collabera2
+111,"Cohesity, Inc.",workday,cohesity.wd5.myworkdayjobs.com|cohesity|Cohesity_Careers
+114,Roblox Corporation,greenhouse,roblox
+115,"Red Hat, LLC",workday,redhat.wd5.myworkdayjobs.com|redhat|jobs
+116,U.S. Bank National Association,workday,usbank.wd1.myworkdayjobs.com|usbank|US_Bank_Careers
+126,"OpenAI OpCo, LLC",ashby,openai
+131,"Stripe, LLC",greenhouse,stripe
+140,"Rubrik, Inc.",greenhouse,rubrik
+146,"LexisNexis Risk Solutions, Inc.",workday,relx.wd3.myworkdayjobs.com|relx|RiskSolutions
+149,KLA Corporation,workday,kla.wd1.myworkdayjobs.com|kla|UR
+153,Hewlett Packard Enterprise Company,workday,hpe.wd5.myworkdayjobs.com|hpe|jobsathpe
+161,"Autodesk, Inc.",workday,autodesk.wd1.myworkdayjobs.com|autodesk|Ext
+167,Hitachi Digital Services LLC,workday,hitachi.wd1.myworkdayjobs.com|hitachi|hitachi
+176,BANK OF AMERICA N.A.,workday,ghr.wd1.myworkdayjobs.com|ghr|us-emplsv
+188,"COPART, INC",workday,copart.wd12.myworkdayjobs.com|copart|copart
+193,General Motors,workday,generalmotors.wd5.myworkdayjobs.com|generalmotors|Careers_GM
+205,The University of Southern California,workday,usc.wd5.myworkdayjobs.com|usc|ExternalUSCCareers
+206,New York Life Insurance Company,greenhouse,thenewyorktimes
+212,"CCC Intelligent Solutions, Inc",workday,cccis.wd1.myworkdayjobs.com|cccis|broadbean_external
+242,"AT&T SERVICES, INC.",workday,att.wd1.myworkdayjobs.com|att|ATTGeneral
+245,Caterpillar Inc.,workday,cat.wd5.myworkdayjobs.com|cat|CaterpillarCareers
+261,TransUnion LLC,workday,transunion.wd5.myworkdayjobs.com|transunion|TransUnion
+269,"Mastercard Technologies, LLC",workday,mastercard.wd1.myworkdayjobs.com|mastercard|Campus
+270,"T-Mobile USA, Inc.",workday,tmobile.wd1.myworkdayjobs.com|tmobile|External
+272,"Brillio, LLC",lever,brillio-2
+273,"Coinbase, Inc.",greenhouse,coinbase
+277,"Micron Technology, Inc.",workday,micron.wd1.myworkdayjobs.com|micron|External
+278,"United Parcel Service General Services, Co.",workday,hcmportal.wd5.myworkdayjobs.com|hcmportal|Search
+283,"ASML US, LP",workday,asml.wd3.myworkdayjobs.com|asml|asmlext1
+291,"Schweitzer Engineering Laboratories, Inc.",workday,selinc.wd1.myworkdayjobs.com|selinc|SEL
+292,"Medtronic, Inc.",workday,medtronic.wd1.myworkdayjobs.com|medtronic|redeploymentmedtroniccareers
+297,Arizona State University,workday,asuep.wd5.myworkdayjobs.com|asuep|ASUEP
+300,Kaseya US LLC,greenhouse,kaseya

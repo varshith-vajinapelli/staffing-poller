@@ -808,6 +808,193 @@ def ibm_jobs():
 
 
 
+# ---------- companies with visa history: their own job boards ----------
+# data/visa_boards.csv lists top-ranked visa-history companies whose careers
+# site uses a system with a public job feed (Workday, Greenhouse, Lever, Ashby,
+# SmartRecruiters). Checked every run, whole US.
+
+BOARDS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "visa_boards.csv")
+BOARD_SEARCHES = ["software", "developer", "engineer", "data", "intern"]
+US_STATES = ("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV "
+             "NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC").split()
+STATE_NAMES = ["alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
+               "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
+               "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
+               "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada",
+               "new hampshire", "new jersey", "new mexico", "new york", "north carolina",
+               "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island",
+               "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont",
+               "virginia", "washington", "west virginia", "wisconsin", "wyoming"]
+
+
+FOREIGN = re.compile(r"\b(canada|ontario|quebec|toronto|vancouver|united kingdom|uk|england|"
+                     r"london|india|bengaluru|bangalore|hyderabad|pune|chennai|mumbai|noida|"
+                     r"gurgaon|gurugram|mexico|colombia|bogota|brazil|argentina|costa rica|"
+                     r"germany|ireland|dublin|singapore|poland|china|japan|korea|philippines|"
+                     r"australia|netherlands|france|spain|israel|romania|portugal|switzerland|"
+                     r"sweden|taiwan|vietnam|malaysia|uae|dubai)\b")
+
+
+def in_usa(place):
+    # "San Jose, CA", "Remote - US", "Austin, Texas, United States" -> True;
+    # "London", "CO - Bogota, Colombia", "IN - Bengaluru, India" -> False
+    text = place or ""
+    low = text.lower()
+    if FOREIGN.search(low.replace("new mexico", "")) and not re.search(r"united states|\busa\b", low):
+        return False
+    if re.search(r"united states|\busa\b|\bu\.s\.|\bus\b|\bamer", low):
+        return True
+    if any(name in low for name in STATE_NAMES):
+        return True
+    return re.search(r"\b(%s)\b" % "|".join(US_STATES), text) is not None
+
+
+def board_job(company, system, job_id, title, place, posted, link, desc):
+    return {
+        "id": "board:%s:%s" % (system, job_id),
+        "firm": company,
+        "title": (title or "").strip(),
+        "location": (place or "")[:120],
+        "type": "",
+        "posted": (posted or "")[:10],
+        "contact": "",
+        "link": link,
+        "desc": strip_tags(desc or ""),
+    }
+
+
+def workday_board(company, ref):
+    host, tenant, site = ref.split("|")
+    base = "https://%s/wday/cxs/%s/%s" % (host, tenant, site)
+    jobs, seen = [], set()
+    for words in BOARD_SEARCHES:
+        body = {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": words}
+        for it in json.loads(fetch(base + "/jobs", body)).get("jobPostings", []):
+            path = it.get("externalPath", "")
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            if workday_days_ago(it.get("postedOn")) > MAX_AGE_DAYS or drop_reason(it.get("title", "")):
+                continue
+            info = json.loads(fetch(base + path)).get("jobPostingInfo", {})
+            places = [info.get("location", "")] + info.get("additionalLocations", [])
+            country = (info.get("country") or {}).get("descriptor", "")
+            if not (in_usa(country) or any(in_usa(p) for p in places)):
+                continue
+            age = workday_days_ago(it.get("postedOn"))
+            posted = (datetime.date.today() - datetime.timedelta(days=age)).strftime("%Y-%m-%d")
+            jobs.append(board_job(company, "workday", tenant + path.split("_")[-1], it.get("title"),
+                                  "; ".join(p for p in places if p), posted,
+                                  info.get("externalUrl") or "https://%s/%s%s" % (host, site, path),
+                                  info.get("jobDescription")))
+    return jobs
+
+
+def greenhouse_board(company, slug):
+    data = json.loads(fetch("https://boards-api.greenhouse.io/v1/boards/%s/jobs?content=true" % slug))
+    jobs = []
+    for it in data.get("jobs", []):
+        posted = it.get("first_published") or it.get("updated_at") or ""
+        place = (it.get("location") or {}).get("name", "")
+        if too_old(posted[:10]) or not in_usa(place):
+            continue
+        jobs.append(board_job(company, "greenhouse", it.get("id"), it.get("title"), place, posted,
+                              it.get("absolute_url"), html.unescape(it.get("content") or "")))
+    return jobs
+
+
+def lever_board(company, slug):
+    data = json.loads(fetch("https://api.lever.co/v0/postings/%s?mode=json" % slug))
+    jobs = []
+    for it in data:
+        posted = datetime.date.fromtimestamp((it.get("createdAt") or 0) / 1000).isoformat()
+        place = (it.get("categories") or {}).get("location", "")
+        if too_old(posted) or not in_usa(place + " " + (it.get("country") or "")):
+            continue
+        desc = (it.get("descriptionPlain") or "") + " " + " ".join(
+            l.get("text", "") + " " + strip_tags(l.get("content", "")) for l in it.get("lists", []))
+        jobs.append(board_job(company, "lever", it.get("id"), it.get("text"), place, posted,
+                              it.get("hostedUrl"), desc))
+    return jobs
+
+
+def ashby_board(company, slug):
+    data = json.loads(fetch("https://api.ashbyhq.com/posting-api/job-board/%s" % slug))
+    jobs = []
+    for it in data.get("jobs", []):
+        posted = it.get("publishedAt") or ""
+        country = (((it.get("address") or {}).get("postalAddress")) or {}).get("addressCountry", "")
+        place = it.get("location", "")
+        if too_old(posted[:10]) or not in_usa(place + " " + country):
+            continue
+        jobs.append(board_job(company, "ashby", it.get("id"), it.get("title"), place, posted,
+                              it.get("jobUrl"), it.get("descriptionPlain")))
+    return jobs
+
+
+def smartrecruiters_board(company, slug):
+    url = "https://api.smartrecruiters.com/v1/companies/%s/postings?limit=100&country=us" % slug
+    jobs = []
+    for it in json.loads(fetch(url)).get("content", []):
+        posted = it.get("releasedDate") or ""
+        loc = it.get("location") or {}
+        place = ", ".join(x for x in (loc.get("city"), loc.get("region")) if x) + " US"
+        if too_old(posted[:10]) or drop_reason(it.get("name", "")):
+            continue
+        detail = json.loads(fetch("https://api.smartrecruiters.com/v1/companies/%s/postings/%s"
+                                  % (slug, it.get("id"))))
+        sections = ((detail.get("jobAd") or {}).get("sections")) or {}
+        desc = " ".join((sections.get(k) or {}).get("text", "") for k in
+                        ("jobDescription", "qualifications", "additionalInformation"))
+        jobs.append(board_job(company, "smartrecruiters", it.get("id"), it.get("name"), place, posted,
+                              "https://jobs.smartrecruiters.com/%s/%s" % (slug, it.get("id")), desc))
+    return jobs
+
+
+# Company boards list every department, so a title must also name tech work.
+TECH_TITLE_WORDS = ["software", "developer", "programmer", "engineer", "data", "machine learning",
+                    " ml ", " ai ", "ai/", "qa", "quality assurance", "test", "automation",
+                    "full-stack", "full stack", "frontend", "front-end", "backend", "back-end",
+                    "web", "cloud", "devops", "platform", "application", "computer", " it ",
+                    "business intelligence", "quantitative", "quant ", "sdet", "robotics", "security"]
+NON_TECH_TITLE = ["sales", "account executive", "marketing", "recruit", "financial analyst",
+                  "accountant", "legal", "counsel", "designer", "creative", "content", "hardware",
+                  "mechanical", "electrical", "manufacturing", "process engineer", "field service",
+                  "solution engineer", "solutions engineer", "account engineer", "sales engineer",
+                  "customer success", "support engineer"]
+
+
+def tech_title(title):
+    t = " " + title.lower() + " "
+    return any(w in t for w in TECH_TITLE_WORDS) and not any(w in t for w in NON_TECH_TITLE)
+
+
+BOARD_READERS = {"workday": workday_board, "greenhouse": greenhouse_board, "lever": lever_board,
+                 "ashby": ashby_board, "smartrecruiters": smartrecruiters_board}
+
+
+def visa_board_jobs():
+    try:
+        with open(BOARDS_FILE, encoding="utf-8") as f:
+            boards = list(csv.DictReader(f))
+    except OSError:
+        return []
+
+    def read(board):
+        try:
+            return BOARD_READERS[board["system"]](board["company"], board["board"])
+        except Exception as e:
+            note_problem("board:" + board["company"],
+                         "%s job board (%s): couldn't check (%s)" % (board["company"], board["system"], e))
+            return []
+
+    jobs = []
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        for found in pool.map(read, boards):
+            jobs.extend(j for j in found if tech_title(j["title"]))
+    return jobs
+
+
 FIRMS = [
     ("Apex Systems", apex_jobs),
     ("Brooksource", brooksource_jobs),
@@ -823,6 +1010,7 @@ FIRMS = [
     ("Deloitte", deloitte_jobs),
     ("Wipro", wipro_jobs),
     ("IBM", ibm_jobs),
+    ("Visa-history companies", visa_board_jobs),
 ]
 
 
