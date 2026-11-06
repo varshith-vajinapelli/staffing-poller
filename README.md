@@ -11,8 +11,12 @@ a candidate profile, and email only new matches:
   Experis, Robert Half, TEKsystems, Insight Global, Randstad, Beacon Hill.
 - `company_poller.py` (companies hiring directly): a digest twice a day
   (11:52 AM and 5:52 PM Central). Simplify's public new-grad and internship
-  lists plus Minnesota employers' Workday boards (Target, U.S. Bank, Medtronic,
-  3M, General Mills, Ameriprise, Securian).
+  lists, Minnesota employers' Workday boards (Target, U.S. Bank, Medtronic,
+  3M, General Mills, Ameriprise, Securian), and OPT-friendly IT consulting
+  firms searched across the whole US: Accenture, Capgemini, Cognizant,
+  Deloitte, Wipro, IBM. (Infosys and TCS block requests from GitHub's
+  servers, so they can't be included. IBM's job pages are built by
+  JavaScript, so the AI judges IBM jobs from a short summary.)
 
 Both run on GitHub Actions, triggered by cron-job.org. They share `jobs.db`
 (what was already sent, what was dropped and why, pending alerts), and only one
