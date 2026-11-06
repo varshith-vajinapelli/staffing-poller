@@ -94,14 +94,6 @@ at client sites, and one of 4 buckets: IT services / consulting, large non-tech,
 cap-exempt, tech companies. Jobs at listed companies get a "Visa history" line in
 the email, and the AI weighs it.
 
-`data/visa_boards.csv` lists 64 of the top 300 whose own careers site uses a
-system with a public job feed (Workday, Greenhouse, Lever, Ashby,
-SmartRecruiters): NVIDIA, Cisco, Salesforce, Adobe, Capital One, Morgan Stanley,
-Visa, U.S. Bank, Databricks, Stripe, OpenAI and more. The staffing poller checks
-them every run ("Visa-history companies"), whole US, tech titles only. The rest
-of the top 300 either run custom career sites (Amazon, Meta, Apple, Google,
-Goldman, Microsoft) or have no public board.
-
 To rebuild it with newer files: run `tools/visa/extract_lca.py` on each LCA
 Excel file, then `tools/visa/score.py` with the USCIS CSVs.
 
