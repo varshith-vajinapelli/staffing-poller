@@ -7,16 +7,17 @@
 Two scripts find new entry-level tech jobs, have an AI screen each one against
 a candidate profile, and email only new matches:
 
-- `poller.py` (staffing firms): every 30 minutes. Apex Systems, Brooksource,
-  Experis, Robert Half, TEKsystems, Insight Global, Randstad, Beacon Hill.
+- `poller.py` (staffing and consulting firms): every 30 minutes. Staffing
+  firms Apex Systems, Brooksource, Experis, Robert Half, TEKsystems, Insight
+  Global, Randstad, Beacon Hill; and OPT-friendly IT consulting firms
+  Accenture, Capgemini, Cognizant, Deloitte, Wipro, IBM, searched across the
+  whole US. (Infosys and TCS block requests from GitHub's servers, so they
+  can't be included. IBM's job pages are built by JavaScript, so the AI
+  judges IBM jobs from a short summary.)
 - `company_poller.py` (companies hiring directly): a digest twice a day
   (11:52 AM and 5:52 PM Central). Simplify's public new-grad and internship
-  lists, Minnesota employers' Workday boards (Target, U.S. Bank, Medtronic,
-  3M, General Mills, Ameriprise, Securian), and OPT-friendly IT consulting
-  firms searched across the whole US: Accenture, Capgemini, Cognizant,
-  Deloitte, Wipro, IBM. (Infosys and TCS block requests from GitHub's
-  servers, so they can't be included. IBM's job pages are built by
-  JavaScript, so the AI judges IBM jobs from a short summary.)
+  lists plus Minnesota employers' Workday boards (Target, U.S. Bank, Medtronic,
+  3M, General Mills, Ameriprise, Securian).
 
 Both run on GitHub Actions, triggered by cron-job.org. They share `jobs.db`
 (what was already sent, what was dropped and why, pending alerts), and only one
@@ -24,7 +25,8 @@ runs at a time - if one starts while the other is going, it waits its turn.
 
 ## Where it looks (staffing poller)
 
-All of Minnesota, fully remote US jobs, and these metros with their suburbs:
+For the staffing firms: all of Minnesota, fully remote US jobs, and these
+metros with their suburbs (the consulting firms are searched across the whole US):
 Milwaukee, Madison, Detroit / Ann Arbor, Grand Rapids, Chicago, Atlanta,
 Austin, Dallas - Fort Worth, Houston, San Antonio, Phoenix, Charlotte,
 Raleigh - Durham, Columbus, Kansas City (MO and KS sides), Nashville.

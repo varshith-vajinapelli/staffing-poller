@@ -590,6 +590,219 @@ def insight_global_jobs():
     return jobs
 
 
+# ---------- OPT-friendly consulting firms (all US locations) ----------
+# Big IT consulting firms hire many OPT new grads and fill roles fast, so they're
+# checked every run and across the whole US (not just PLACES). Infosys and TCS
+# block requests from GitHub's servers, so they can't be included.
+
+ACCENTURE_SEARCHES = ["software", "developer", "data", "intern", "associate engineer", "analyst"]
+
+
+def workday_days_ago(posted_on):
+    # "Posted Today", "Posted Yesterday", "Posted 3 Days Ago", "Posted 30+ Days Ago"
+    text = (posted_on or "").lower()
+    if "today" in text:
+        return 0
+    if "yesterday" in text:
+        return 1
+    m = re.search(r"(\d+)", text)
+    return int(m.group(1)) if m else 999
+
+
+def accenture_jobs():
+    # Accenture's Workday board, US jobs only. A job's page (location and full
+    # description) is only opened when its title passes the keyword filter.
+    host = "https://accenture.wd103.myworkdayjobs.com"
+    base = host + "/wday/cxs/accenture/AccentureCareers"
+    us_only = {"locationCountry": ["bc33aa3152ec42d4995f4791a106ed09"]}
+    seen_paths = set()
+    jobs = []
+    for words in ACCENTURE_SEARCHES:
+        body = {"appliedFacets": us_only, "limit": 20, "offset": 0, "searchText": words}
+        data = json.loads(fetch(base + "/jobs", body))
+        for it in data.get("jobPostings", []):
+            path = it.get("externalPath", "")
+            if not path or path in seen_paths:
+                continue
+            seen_paths.add(path)
+            age = workday_days_ago(it.get("postedOn"))
+            if age > MAX_AGE_DAYS:
+                continue
+            title = it.get("title", "")
+            job = {
+                "id": "accenture:" + path.split("_")[-1],
+                "firm": "Accenture",
+                "title": title,
+                "location": it.get("locationsText") or "United States",
+                "type": "",
+                "posted": (datetime.date.today() - datetime.timedelta(days=age)).strftime("%Y-%m-%d"),
+                "contact": "",
+                "link": host + "/AccentureCareers" + path,
+                "desc": "",
+            }
+            if not drop_reason(title):
+                info = json.loads(fetch(base + path)).get("jobPostingInfo", {})
+                places = [info.get("location", "")] + info.get("additionalLocations", [])
+                job["location"] = "; ".join(p for p in places if p)[:120] or job["location"]
+                job["desc"] = strip_tags(info.get("jobDescription", ""))
+            jobs.append(job)
+    return jobs
+
+
+def capgemini_jobs():
+    # Capgemini's own jobs API (US site), 100 per page, description included.
+    jobs = []
+    for page in range(1, 9):
+        url = ("https://cg-jobstream-api.azurewebsites.net/api/job-search"
+               "?page=%d&size=100&country_code=us-en" % page)
+        items = json.loads(fetch(url)).get("data", [])
+        for it in items:
+            if it.get("experience_level") == "Executives":
+                continue
+            posted = (it.get("indexed_at") or "")[:10]
+            if too_old(posted):
+                continue
+            jobs.append({
+                "id": "capgemini:" + it.get("ref", it.get("id", "")),
+                "firm": "Capgemini",
+                "title": it.get("title", ""),
+                "location": (it.get("location") or "United States")[:120],
+                "type": it.get("contract_type", ""),
+                "posted": posted,
+                "contact": "",
+                "link": it.get("apply_job_url", ""),
+                "desc": strip_tags(it.get("description", "")),
+            })
+        if len(items) < 100:
+            break
+    return jobs
+
+
+def cognizant_jobs():
+    # Server-rendered US job list, 10 per page; the description is read later.
+    jobs = []
+    card_re = re.compile(r'<div class="card-body">(.*?)(?=<div class="card-body">|$)', re.S)
+    for page in range(1, 11):
+        page_html = fetch("https://careers.cognizant.com/us-en/jobs/?page=%d" % page)
+        for card in card_re.findall(page_html):
+            link = re.search(r'href="(/us-en/jobs/(\d+)/[^"]+)"[^>]*>([^<]+)</a>', card)
+            if not link:
+                continue
+            text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " | ", card))
+            place = re.search(r"([^|]*United States)", text)
+            if not place:
+                continue
+            jobs.append({
+                "id": "cognizant:" + link.group(2),
+                "firm": "Cognizant",
+                "title": html.unescape(link.group(3).strip()),
+                "location": html.unescape(place.group(1).strip()),
+                "type": "",
+                "posted": "",
+                "contact": "",
+                "link": "https://careers.cognizant.com" + link.group(1),
+                "desc": "",
+            })
+    return jobs
+
+
+def deloitte_jobs():
+    # Deloitte's search page (newest first), 10 per page; description read later.
+    jobs = []
+    for offset in range(0, 100, 10):
+        page_html = fetch("https://apply.deloitte.com/careers/SearchJobs"
+                                 "?listFilterMode=1&jobRecordsPerPage=10&sort=1&jobOffset=%d" % offset)
+        for card in re.findall(r'<article class="article--result.*?</article>', page_html, re.S):
+            link = re.search(r'href="(https://apply\.deloitte\.com/[^"]*/JobDetail/[^"]*/(\d+))"[^>]*>\s*([^<]+?)\s*</a>', card)
+            if not link:
+                continue
+            parts = [p.strip() for p in re.sub(r"<[^>]+>", "|", card).split("|") if p.strip()]
+            location = parts[-1] if parts else "United States"
+            jobs.append({
+                "id": "deloitte:" + link.group(2),
+                "firm": "Deloitte",
+                "title": html.unescape(link.group(3)),
+                "location": html.unescape(location)[:120],
+                "type": "",
+                "posted": "",
+                "contact": "",
+                "link": link.group(1),
+                "desc": "",
+            })
+    return jobs
+
+
+def wipro_jobs():
+    # Wipro's job API (SAP SuccessFactors), US only, newest first, 10 per page;
+    # the description is read from each job page later.
+    jobs = []
+    for page in range(10):
+        body = {"locale": "en_US", "pageNumber": page, "sortBy": "date", "keywords": "",
+                "location": "", "facetFilters": {"jobLocationCountry": ["United States"]},
+                "brand": "", "skills": [], "categoryId": 0, "alertId": "", "rcmCandidateId": ""}
+        data = json.loads(fetch("https://careers.wipro.com/services/recruiting/v1/jobs", body))
+        results = data.get("jobSearchResult", [])
+        for row in results:
+            it = row.get("response", {})
+            month, day, year = (it.get("unifiedStandardStart") or "1/1/00").split("/")
+            posted = "%d/%d/20%s" % (int(month), int(day), year)
+            if too_old(posted):
+                continue
+            place = " ".join(it.get("jobLocationShort", [""])).replace("<br/>", "").strip()
+            jobs.append({
+                "id": "wipro:" + it.get("id", ""),
+                "firm": "Wipro",
+                "title": it.get("unifiedStandardTitle", ""),
+                "location": place[:120],
+                "type": "",
+                "posted": posted,
+                "contact": "",
+                "link": "https://careers.wipro.com/job/%s/%s-en_US" % (it.get("urlTitle", ""), it.get("id", "")),
+                "desc": "",
+            })
+        if len(results) < 10:
+            break
+    return jobs
+
+
+def ibm_jobs():
+    # IBM's career search API, newest first; keep US jobs. Its job pages are
+    # built by JavaScript, so the AI gets the title, level and a short summary.
+    hits = []
+    for start in (0, 100):   # the API allows 100 per request
+        body = {"appId": "careers", "scopes": ["careers2"], "query": {"bool": {"must": []}},
+                "size": 100, "from": start, "sort": [{"dcdate": "desc"}], "lang": "zz",
+                "localeSelector": {}, "sm": {"query": "", "lang": "zz"},
+                "_source": ["_id", "title", "url", "description", "dcdate",
+                            "field_keyword_08", "field_keyword_18", "field_keyword_19"]}
+        data = json.loads(fetch("https://www-api.ibm.com/search/api/v2", body))
+        hits.extend(data.get("hits", {}).get("hits", []))
+    jobs = []
+    for hit in hits:
+        it = hit.get("_source", {})
+        place = it.get("field_keyword_19", "")
+        if not (place.endswith(", US") or "United States" in place):
+            continue
+        posted = it.get("dcdate", "")
+        if too_old(posted):
+            continue
+        level = it.get("field_keyword_18", "")
+        jobs.append({
+            "id": "ibm:" + it.get("url", hit.get("_id", "")).split("jobId=")[-1],
+            "firm": "IBM",
+            "title": it.get("title", ""),
+            "location": place,
+            "type": "Internship" if level == "Internship" else "",
+            "posted": posted,
+            "contact": "",
+            "link": it.get("url", ""),
+            "desc": "Level: %s. Area: %s. %s" % (level, it.get("field_keyword_08", ""),
+                                                it.get("description", "")),
+        })
+    return jobs
+
+
+
 FIRMS = [
     ("Apex Systems", apex_jobs),
     ("Brooksource", brooksource_jobs),
@@ -599,6 +812,12 @@ FIRMS = [
     ("Insight Global", insight_global_jobs),
     ("Randstad", randstad_jobs),
     ("Beacon Hill", beacon_hill_jobs),
+    ("Accenture", accenture_jobs),
+    ("Capgemini", capgemini_jobs),
+    ("Cognizant", cognizant_jobs),
+    ("Deloitte", deloitte_jobs),
+    ("Wipro", wipro_jobs),
+    ("IBM", ibm_jobs),
 ]
 
 
@@ -841,6 +1060,11 @@ def robert_half_description(job):
     return "Requirements: " + requirements + " Description: " + job["desc"]
 
 
+def page_description(job):
+    # The job page's visible text (Cognizant, Deloitte, Wipro).
+    return strip_tags(re.sub(r"(?is)<(script|style).*?</\1>", " ", fetch(job["link"])))
+
+
 def insight_global_description(job):
     req_id = job["id"].split(":", 1)[1]
     data = json.loads(fetch("https://insightglobal.com/all/jobs/%s/details" % req_id))
@@ -854,6 +1078,9 @@ DESCRIBERS = {
     "Randstad": json_description,
     "Insight Global": insight_global_description,
     "Robert Half": robert_half_description,
+    "Cognizant": page_description,
+    "Deloitte": page_description,
+    "Wipro": page_description,
 }
 
 
@@ -1190,11 +1417,16 @@ def run(db, dry_run):
             else:
                 good.append(j)
         already = set(j["id"] for j in new_jobs)
+        # Some firms post one job several times under different IDs; keep one
+        # per firm + title + location.
+        same_posting = set((j["firm"], j["title"].lower(), j["location"]) for j in new_jobs)
         fresh = []
         for j in good:
-            if not is_seen(db, j["id"]) and j["id"] not in already:
+            key = (j["firm"], j["title"].lower(), j["location"])
+            if not is_seen(db, j["id"]) and j["id"] not in already and key not in same_posting:
                 fresh.append(j)
                 already.add(j["id"])
+                same_posting.add(key)
         print("%s: %d jobs in wanted places, %d fit, %d new" % (name, len(jobs), len(good), len(fresh)))
         new_jobs.extend(fresh)
 

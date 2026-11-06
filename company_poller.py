@@ -205,14 +205,12 @@ def days_ago(posted_on):
 early_drops = []
 
 
-def workday_jobs_for(company, host, tenant, site, facets=None, anywhere_in_us=False):
-    # facets: Workday's own filters (e.g. US only); anywhere_in_us: keep every US
-    # location instead of only Minnesota + your regions.
+def workday_jobs_for(company, host, tenant, site):
     base = "https://%s/wday/cxs/%s/%s" % (host, tenant, site)
     seen_paths = set()
     jobs = []
     for words in WORKDAY_SEARCHES:
-        body = {"appliedFacets": facets or {}, "limit": 20, "offset": 0, "searchText": words}
+        body = {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": words}
         data = json.loads(poller.fetch(base + "/jobs", body))
         for it in data.get("jobPostings", []):
             path = it.get("externalPath", "")
@@ -238,11 +236,8 @@ def workday_jobs_for(company, host, tenant, site, facets=None, anywhere_in_us=Fa
             info = json.loads(poller.fetch(base + path)).get("jobPostingInfo", {})
             places = [info.get("location", "")] + info.get("additionalLocations", [])
             places_text = "; ".join(p for p in places if p)
-            if anywhere_in_us:
-                if not any(in_us(p) for p in places):
-                    continue
-            elif not (any(in_minnesota(p) or "home office" in p.lower() for p in places)
-                      or any(wanted_place(p) for p in places)):
+            if not (any(in_minnesota(p) or "home office" in p.lower() for p in places)
+                    or any(wanted_place(p) for p in places)):
                 continue
             kind = "Internship" if re.search(r"\bintern", title.lower()) else "Full-time"
             posted = (datetime.date.today() - datetime.timedelta(days=age)).strftime("%Y-%m-%d")
@@ -271,170 +266,6 @@ def workday_jobs():
                                 "Workday %s: couldn't check (%s)" % (company, e))
             errors.append(company)
     return jobs, errors
-
-
-# ---------- OPT-friendly consulting firms (all US locations) ----------
-# Big IT consulting firms hire many OPT new grads, so these are searched across
-# the whole US. (Infosys and TCS block requests from GitHub's servers, so
-# they can't be included.)
-
-def accenture_jobs():
-    us_only = {"locationCountry": ["bc33aa3152ec42d4995f4791a106ed09"]}
-    return workday_jobs_for("Accenture", "accenture.wd103.myworkdayjobs.com", "accenture",
-                            "AccentureCareers", facets=us_only, anywhere_in_us=True)
-
-
-def capgemini_jobs():
-    # Capgemini's own jobs API (US site), 100 per page, description included.
-    jobs = []
-    for page in range(1, 9):
-        url = ("https://cg-jobstream-api.azurewebsites.net/api/job-search"
-               "?page=%d&size=100&country_code=us-en" % page)
-        items = json.loads(poller.fetch(url)).get("data", [])
-        for it in items:
-            if it.get("experience_level") == "Executives":
-                continue
-            posted = (it.get("indexed_at") or "")[:10]
-            if poller.too_old(posted):
-                continue
-            jobs.append({
-                "id": "capgemini:" + it.get("ref", it.get("id", "")),
-                "firm": "Capgemini",
-                "title": it.get("title", ""),
-                "location": (it.get("location") or "United States")[:120],
-                "type": it.get("contract_type", ""),
-                "posted": posted,
-                "contact": "",
-                "link": it.get("apply_job_url", ""),
-                "desc": poller.strip_tags(it.get("description", "")),
-            })
-        if len(items) < 100:
-            break
-    return jobs
-
-
-def cognizant_jobs():
-    # Server-rendered US job list, 10 per page; the description is read later.
-    jobs = []
-    card_re = re.compile(r'<div class="card-body">(.*?)(?=<div class="card-body">|$)', re.S)
-    for page in range(1, 11):
-        page_html = poller.fetch("https://careers.cognizant.com/us-en/jobs/?page=%d" % page)
-        for card in card_re.findall(page_html):
-            link = re.search(r'href="(/us-en/jobs/(\d+)/[^"]+)"[^>]*>([^<]+)</a>', card)
-            if not link:
-                continue
-            text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " | ", card))
-            place = re.search(r"([^|]*United States)", text)
-            if not place:
-                continue
-            jobs.append({
-                "id": "cognizant:" + link.group(2),
-                "firm": "Cognizant",
-                "title": html.unescape(link.group(3).strip()),
-                "location": html.unescape(place.group(1).strip()),
-                "type": "",
-                "posted": "",
-                "contact": "",
-                "link": "https://careers.cognizant.com" + link.group(1),
-                "desc": "",
-            })
-    return jobs
-
-
-def deloitte_jobs():
-    # Deloitte's search page (newest first), 10 per page; description read later.
-    jobs = []
-    for offset in range(0, 100, 10):
-        page_html = poller.fetch("https://apply.deloitte.com/careers/SearchJobs"
-                                 "?listFilterMode=1&jobRecordsPerPage=10&sort=1&jobOffset=%d" % offset)
-        for card in re.findall(r'<article class="article--result.*?</article>', page_html, re.S):
-            link = re.search(r'href="(https://apply\.deloitte\.com/[^"]*/JobDetail/[^"]*/(\d+))"[^>]*>\s*([^<]+?)\s*</a>', card)
-            if not link:
-                continue
-            parts = [p.strip() for p in re.sub(r"<[^>]+>", "|", card).split("|") if p.strip()]
-            location = parts[-1] if parts else "United States"
-            jobs.append({
-                "id": "deloitte:" + link.group(2),
-                "firm": "Deloitte",
-                "title": html.unescape(link.group(3)),
-                "location": html.unescape(location)[:120],
-                "type": "",
-                "posted": "",
-                "contact": "",
-                "link": link.group(1),
-                "desc": "",
-            })
-    return jobs
-
-
-def wipro_jobs():
-    # Wipro's job API (SAP SuccessFactors), US only, newest first, 10 per page;
-    # the description is read from each job page later.
-    jobs = []
-    for page in range(10):
-        body = {"locale": "en_US", "pageNumber": page, "sortBy": "date", "keywords": "",
-                "location": "", "facetFilters": {"jobLocationCountry": ["United States"]},
-                "brand": "", "skills": [], "categoryId": 0, "alertId": "", "rcmCandidateId": ""}
-        data = json.loads(poller.fetch("https://careers.wipro.com/services/recruiting/v1/jobs", body))
-        results = data.get("jobSearchResult", [])
-        for row in results:
-            it = row.get("response", {})
-            month, day, year = (it.get("unifiedStandardStart") or "1/1/00").split("/")
-            posted = "%d/%d/20%s" % (int(month), int(day), year)
-            if poller.too_old(posted):
-                continue
-            place = " ".join(it.get("jobLocationShort", [""])).replace("<br/>", "").strip()
-            jobs.append({
-                "id": "wipro:" + it.get("id", ""),
-                "firm": "Wipro",
-                "title": it.get("unifiedStandardTitle", ""),
-                "location": place[:120],
-                "type": "",
-                "posted": posted,
-                "contact": "",
-                "link": "https://careers.wipro.com/job/%s/%s-en_US" % (it.get("urlTitle", ""), it.get("id", "")),
-                "desc": "",
-            })
-        if len(results) < 10:
-            break
-    return jobs
-
-
-def ibm_jobs():
-    # IBM's career search API, newest first; keep US jobs. Its job pages are
-    # built by JavaScript, so the AI gets the title, level and a short summary.
-    hits = []
-    for start in (0, 100):   # the API allows 100 per request
-        body = {"appId": "careers", "scopes": ["careers2"], "query": {"bool": {"must": []}},
-                "size": 100, "from": start, "sort": [{"dcdate": "desc"}], "lang": "zz",
-                "localeSelector": {}, "sm": {"query": "", "lang": "zz"},
-                "_source": ["_id", "title", "url", "description", "dcdate",
-                            "field_keyword_08", "field_keyword_18", "field_keyword_19"]}
-        data = json.loads(poller.fetch("https://www-api.ibm.com/search/api/v2", body))
-        hits.extend(data.get("hits", {}).get("hits", []))
-    jobs = []
-    for hit in hits:
-        it = hit.get("_source", {})
-        place = it.get("field_keyword_19", "")
-        if not (place.endswith(", US") or "United States" in place):
-            continue
-        posted = it.get("dcdate", "")
-        if poller.too_old(posted):
-            continue
-        level = it.get("field_keyword_18", "")
-        jobs.append({
-            "id": "ibm:" + it.get("url", hit.get("_id", "")).split("jobId=")[-1],
-            "firm": "IBM",
-            "title": it.get("title", ""),
-            "location": place,
-            "type": "Internship" if level == "Internship" else "",
-            "posted": posted,
-            "contact": "",
-            "link": it.get("url", ""),
-            "desc": "Level: %s. Area: %s. %s" % (level, it.get("field_keyword_08", ""),
-                                                it.get("description", "")),
-        })
-    return jobs
 
 
 # ---------- AI: same reviewer, plus internship rules ----------
@@ -495,12 +326,6 @@ def run(db, dry_run):
     sources = [
         ("Simplify new grad", simplify_new_grad_jobs),
         ("Simplify internships", simplify_internship_jobs),
-        ("Accenture", accenture_jobs),
-        ("Capgemini", capgemini_jobs),
-        ("Cognizant", cognizant_jobs),
-        ("Deloitte", deloitte_jobs),
-        ("Wipro", wipro_jobs),
-        ("IBM", ibm_jobs),
     ]
     for name, get_jobs in sources:
         try:
@@ -549,10 +374,10 @@ def run(db, dry_run):
         print("Nothing new.")
         return False
 
-    # Simplify, Cognizant, Deloitte and Wipro jobs have no description yet: read their pages.
+    # Simplify jobs have no description yet: read their pages for the AI.
     unread = []
     for job in fresh:
-        reads_page = job["id"].split(":")[0] in ("simplify", "cognizant", "deloitte", "wipro")
+        reads_page = job["id"].startswith("simplify:")
         if reads_page and not job["desc"]:
             try:
                 job["desc"] = re.sub(r"\s+", " ", page_text(job))[:poller.DESC_LIMIT]
