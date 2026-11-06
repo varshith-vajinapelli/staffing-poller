@@ -1084,6 +1084,12 @@ transportation / supply-chain analyst, financial or accounting analyst,
 business operations, a business analyst who only gathers requirements (no
 testing, data or coding work), customer service, and hardware / data-center
 technician roles.
+He wants to write code. Also "skip" roles that are mostly coordination or
+operations even when the title says "programmer", "developer" or "engineer":
+release / environment management, control room or cutover coordination,
+change management, monitoring / NOC, production-support rotations with no
+development, and project or scrum coordination. If writing code is not a main
+part of the day-to-day duties, it's "skip".
 If the job requires experience in a specific industry domain (for example
 derivatives trading, fixed income, insurance claims systems), mark it "maybe",
 not "apply".
