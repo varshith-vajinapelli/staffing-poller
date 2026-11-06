@@ -28,6 +28,10 @@ from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
 
 DB_FILE = "jobs.db"
+# The AI treats "no sponsorship in the future" postings differently for these.
+STAFFING_AGENCIES = ["Apex Systems", "Brooksource", "Experis", "Robert Half", "TEKsystems",
+                     "Insight Global", "Randstad", "Beacon Hill"]
+
 DESC_LIMIT = 6000  # characters of each posting the AI reads (requirements come last)
 AI_BATCH = 5       # jobs per AI request; fewer = more careful reading of each job
 MAX_AI_FAILS = 4   # failed AI runs in a row before sending unfiltered (runs are 30 min apart)
@@ -995,8 +999,15 @@ For each job below decide:
   "2-5 years") is still "apply" when the required skills match his stack -
   for contract and staffing roles that number is usually flexible.
 - "maybe": could work but has a concern (asks for one or two specific tools
-  he hasn't used, unclear stack, a 2-year ask where the stack only partly
-  matches, or says "no sponsorship now or in the future").
+  he hasn't used, unclear stack, or a 2-year ask where the stack only partly
+  matches).
+"No sponsorship now or in the future" (or "must not require sponsorship at
+any time"): he is on OPT and will need sponsorship later, so these usually
+reject him. Mark it "skip" - EXCEPT a contract or temp role from a staffing
+agency, which can fit inside his OPT years: mark that "maybe" and say to ask
+the recruiter whether OPT works. A posting that only says "must be authorized
+to work in the US" or "without sponsorship" (no "future") is fine - OPT
+counts as authorized.
 - "skip": needs 3+ years, senior-level, wrong field, Java REQUIRED as the
   main language with no alternative (a list like "Java, .NET, or OOP" or
   "Python or Java" is fine - C++ counts as OOP), needs
@@ -1138,8 +1149,10 @@ def ask_gemini(jobs):
     parts = []
     for job in jobs:
         desc = re.sub(r"\s+", " ", job["desc"])[:DESC_LIMIT]
-        parts.append("ID: %s\nTitle: %s\nLocation: %s\nDescription: %s\n"
-                     % (job["id"], job["title"], job["location"], desc or "(none)"))
+        source = "staffing agency" if job["firm"] in STAFFING_AGENCIES else "company"
+        parts.append("ID: %s\nTitle: %s\nFirm: %s (%s)\nJob type: %s\nLocation: %s\nDescription: %s\n"
+                     % (job["id"], job["title"], job["firm"], source, job.get("type") or "not stated",
+                        job["location"], desc or "(none)"))
     body = {
         "contents": [{"parts": [{"text": PROMPT % (CANDIDATE, "\n---\n".join(parts))}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0},
