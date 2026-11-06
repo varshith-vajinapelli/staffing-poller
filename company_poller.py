@@ -380,7 +380,7 @@ def run(db, dry_run):
         reads_page = job["id"].startswith("simplify:")
         if reads_page and not job["desc"]:
             try:
-                job["desc"] = re.sub(r"\s+", " ", page_text(job))[:poller.DESC_LIMIT]
+                job["desc"] = re.sub(r"\s+", " ", page_text(job))
             except Exception:
                 job["desc"] = ""
             # Under ~300 characters means the page was blocked or built by

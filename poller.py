@@ -34,6 +34,10 @@ STAFFING_AGENCIES = ["Apex Systems", "Brooksource", "Experis", "Robert Half", "T
                      "Insight Global", "Randstad", "Beacon Hill"]
 
 DESC_LIMIT = 6000  # characters of each posting the AI reads (requirements come last)
+EXTRA_LIMIT = 600  # characters of visa/sponsorship lines kept from past that cut
+# Words that mark a work-visa line. OPT/CPT only in capitals ("opt out" isn't one).
+VISA_WORDS = re.compile(r"sponsor|\bvisas?\b|\bh-?1b\b|authori[sz]ed to work|"
+                        r"work authori[sz]ation|(?-i:\b(?:OPT|CPT)\b)", re.I)
 AI_BATCH = 5       # jobs per AI request; fewer = more careful reading of each job
 MAX_AI_FAILS = 4   # failed AI runs in a row before sending unfiltered (runs are 30 min apart)
 ALERT_WAIT_HOURS = 3   # problems wait this long for a job email before getting their own
@@ -1206,13 +1210,33 @@ def gemini_error(e):
     return text
 
 
+def ai_text(desc):
+    # The first DESC_LIMIT characters, plus any visa/sponsorship sentences from
+    # the part that got cut. Big companies put "no sponsorship now or in the
+    # future" at the very end, after the About-us and EEO paragraphs.
+    desc = re.sub(r"\s+", " ", desc).strip()
+    if len(desc) <= DESC_LIMIT:
+        return desc
+    found = []
+    # Split where a sentence ends and a new one starts with a capital, so
+    # "the U.S. without sponsorship" stays in one piece.
+    for sentence in re.split(r"(?<=[.!?])\s+(?=[A-Z])", desc[DESC_LIMIT:]):
+        m = VISA_WORDS.search(sentence)
+        if m:
+            # Long run-on "sentences" (bullet lists) keep just the part around the word.
+            found.append(sentence[max(0, m.start() - 150):m.end() + 150])
+    if not found:
+        return desc[:DESC_LIMIT]
+    return desc[:DESC_LIMIT] + (" ... " + " ".join(found))[:EXTRA_LIMIT]
+
+
 def ask_gemini(jobs):
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         return None
     parts = []
     for job in jobs:
-        desc = re.sub(r"\s+", " ", job["desc"])[:DESC_LIMIT]
+        desc = ai_text(job["desc"])
         source = "staffing agency" if job["firm"] in STAFFING_AGENCIES else "company"
         visa = visa_note(job) or "no visa filings found for this company"
         parts.append("ID: %s\nTitle: %s\nFirm: %s (%s)\nJob type: %s\nLocation: %s\n%s\nDescription: %s\n"
@@ -1260,7 +1284,7 @@ def ai_review(jobs):
         describe = DESCRIBERS.get(job["firm"])
         if describe:
             try:
-                job["desc"] = re.sub(r"\s+", " ", describe(job))[:DESC_LIMIT]
+                job["desc"] = re.sub(r"\s+", " ", describe(job))
             except Exception as e:
                 note_problem("describe:" + job["firm"],
                              "Couldn't read %s job pages for the AI (%s); it judged them "
