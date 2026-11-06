@@ -11,6 +11,7 @@ Run:  python poller.py            (check + email)
       python poller.py --dry-run  (check + print, no email, nothing saved)
 """
 
+import csv
 import datetime
 import html
 import json
@@ -975,6 +976,60 @@ def mark_seen(db, job):
                (job["id"], job["title"]))
 
 
+# ---------- visa history (data/visa_companies.csv) ----------
+# Built from public DOL visa filings + USCIS approvals by tools/visa/score.py.
+# A job at one of these companies gets a short note in the email and for the AI.
+
+VISA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "visa_companies.csv")
+NAME_SUFFIXES = {"llc", "inc", "ltd", "limited", "corp", "corporation", "co", "company",
+                 "lp", "llp", "plc", "pllc", "pc", "pa", "the", "incorporated", "usa", "us",
+                 "na", "of", "and"}
+VISA_COMPANIES = {}   # brand -> row
+
+
+def clean_company(name):
+    # "Infosys Limited" / "INFOSYS LTD." -> "infosys" (same cleaning as score.py)
+    n = (name or "").lower()
+    n = re.split(r"\b(?:d/?b/?a|aka|a/k/a)\b", n)[0]
+    n = n.replace("&", " and ")
+    n = re.sub(r"[^a-z0-9 ]", " ", n)
+    return " ".join(w for w in n.split() if w not in NAME_SUFFIXES)
+
+
+def load_visa_companies():
+    try:
+        with open(VISA_FILE, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                VISA_COMPANIES[row["brand"]] = row
+    except OSError:
+        pass   # no list yet: jobs just go without a visa note
+
+
+def visa_row(firm):
+    # Longest brand that the cleaned firm name starts with ("goldman sachs bank" -> "goldman sachs").
+    words = clean_company(firm).split()
+    for n in range(len(words), 0, -1):
+        row = VISA_COMPANIES.get(" ".join(words[:n]))
+        if row:
+            return row
+    return None
+
+
+def visa_note(job):
+    row = visa_row(job["firm"])
+    if not row:
+        return ""
+    note = "Visa history: ~%s junior software H-1B hires" % row["est_junior_hires"]
+    if row["approval_rate"]:
+        note += ", %s%% approved" % row["approval_rate"]
+    if row["cap_exempt"]:
+        note += ", cap-exempt (no lottery)"
+    return note + " (rank %s of %d)" % (row["rank"], len(VISA_COMPANIES))
+
+
+load_visa_companies()
+
+
 # ---------- AI review (Gemini) ----------
 
 # Tried in order: the better model first, the lighter one if the first
@@ -1008,6 +1063,10 @@ agency, which can fit inside his OPT years: mark that "maybe" and say to ask
 the recruiter whether OPT works. A posting that only says "must be authorized
 to work in the US" or "without sponsorship" (no "future") is fine - OPT
 counts as authorized.
+A "Visa history" line means public records show this company hiring junior
+software people on H-1B visas - good news for him. It can tip a borderline job
+from "maybe" to "apply", but never overrides the job's own requirements or a
+"no sponsorship now or in the future" line.
 - "skip": needs 3+ years, senior-level, wrong field, Java REQUIRED as the
   main language with no alternative (a list like "Java, .NET, or OOP" or
   "Python or Java" is fine - C++ counts as OOP), needs
@@ -1150,9 +1209,10 @@ def ask_gemini(jobs):
     for job in jobs:
         desc = re.sub(r"\s+", " ", job["desc"])[:DESC_LIMIT]
         source = "staffing agency" if job["firm"] in STAFFING_AGENCIES else "company"
-        parts.append("ID: %s\nTitle: %s\nFirm: %s (%s)\nJob type: %s\nLocation: %s\nDescription: %s\n"
+        visa = visa_note(job) or "no visa filings found for this company"
+        parts.append("ID: %s\nTitle: %s\nFirm: %s (%s)\nJob type: %s\nLocation: %s\n%s\nDescription: %s\n"
                      % (job["id"], job["title"], job["firm"], source, job.get("type") or "not stated",
-                        job["location"], desc or "(none)"))
+                        job["location"], visa, desc or "(none)"))
     body = {
         "contents": [{"parts": [{"text": PROMPT % (CANDIDATE, "\n---\n".join(parts))}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0},
@@ -1307,6 +1367,9 @@ def job_html(job):
     out += '<span style="color:#555">%s</span>' % e(" · ".join(details))
     if job.get("reason"):
         out += "<br>%s" % e(job["reason"])
+    note = visa_note(job)
+    if note:
+        out += '<br><span style="color:#1a7f37">&#10003; %s</span>' % e(note)
     if job["contact"]:
         out += '<br>Recruiter: <a href="mailto:%s">%s</a>' % (e(job["contact"]), e(job["contact"]))
     out += "</p>"

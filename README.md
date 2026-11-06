@@ -78,6 +78,25 @@ Edit the lists at the top of `poller.py` (and `TECH_WORDS` /
   citizenship / clearance requirements).
 - Descriptions asking for 3+ years of experience are dropped.
 
+## Visa-history company list
+
+`data/visa_companies.csv` ranks ~3,000 companies by how many junior software
+workers they've hired on H-1B visas, from public data:
+
+- DOL LCA disclosure files (certified H-1B filings for new employment, software
+  job codes 15-1252, 15-1253, 15-1211, 15-1243, 15-2051, 15-1299, 15-1251)
+- USCIS H-1B Employer Data Hub (new-employment approvals and denials)
+
+Each company has an estimated count of junior (Level I-II) software hires, the
+share paid Level II or higher (better lottery odds), its approval rate, whether
+it's cap-exempt (universities, research), how much of its visa work is placed
+at client sites, and one of 4 buckets: IT services / consulting, large non-tech,
+cap-exempt, tech companies. Jobs at listed companies get a "Visa history" line in
+the email, and the AI weighs it.
+
+To rebuild it with newer files: run `tools/visa/extract_lca.py` on each LCA
+Excel file, then `tools/visa/score.py` with the USCIS CSVs.
+
 ## Dropped log
 
 Every job the filters or the AI drop is kept for 30 days with its link and
