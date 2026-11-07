@@ -274,8 +274,23 @@ def page_text(job):
     # Simplify links go to many different career sites; take the page's text.
     if "myworkdayjobs.com" in job["link"]:
         return workday_page_text(job["link"])
+    # Workable pages are built by JavaScript too: read its job API instead.
+    # (iCIMS pages block automated requests, so those stay title-only.)
+    if workable_url(job["link"]):
+        data = json.loads(poller.fetch(workable_url(job["link"])))
+        parts = [data.get(k) or "" for k in ["description", "requirements", "benefits"]]
+        return poller.strip_tags(" ".join(parts))
     text = poller.strip_tags(re.sub(r"(?is)<(script|style).*?</\1>", " ", poller.fetch(job["link"])))
     return text
+
+
+def workable_url(link):
+    # https://apply.workable.com/acme/j/ABC123/apply
+    #   -> https://apply.workable.com/api/v2/accounts/acme/jobs/ABC123 (Workable's job API)
+    m = re.match(r"https://apply\.workable\.com/([^/]+)/j/([A-Za-z0-9]+)", link)
+    if not m:
+        return ""
+    return "https://apply.workable.com/api/v2/accounts/%s/jobs/%s" % m.groups()
 
 
 def workday_page_text(link):
