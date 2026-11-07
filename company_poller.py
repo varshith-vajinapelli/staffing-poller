@@ -274,26 +274,14 @@ def page_text(job):
     # Simplify links go to many different career sites; take the page's text.
     if "myworkdayjobs.com" in job["link"]:
         return workday_page_text(job["link"])
-    link = job["link"]
-    # iCIMS and Workable pages are built by JavaScript too: read their
-    # plain versions instead.
-    if icims_url(link):
-        link = icims_url(link)
-    elif workable_url(link):
-        data = json.loads(poller.fetch(workable_url(link)))
+    # Workable pages are built by JavaScript too: read its job API instead.
+    # (iCIMS pages block automated requests, so those stay title-only.)
+    if workable_url(job["link"]):
+        data = json.loads(poller.fetch(workable_url(job["link"])))
         parts = [data.get(k) or "" for k in ["description", "requirements", "benefits"]]
         return poller.strip_tags(" ".join(parts))
-    text = poller.strip_tags(re.sub(r"(?is)<(script|style).*?</\1>", " ", poller.fetch(link)))
+    text = poller.strip_tags(re.sub(r"(?is)<(script|style).*?</\1>", " ", poller.fetch(job["link"])))
     return text
-
-
-def icims_url(link):
-    # https://career-acme.icims.com/jobs/123/job?mobile=true
-    #   -> https://career-acme.icims.com/jobs/123/job?in_iframe=1 (the page without its JavaScript shell)
-    m = re.match(r"(https://[^/]+\.icims\.com/jobs/\d+(?:/[^/?]+)?/job)", link)
-    if not m:
-        return ""
-    return m.group(1) + "?in_iframe=1"
 
 
 def workable_url(link):

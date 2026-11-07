@@ -1,5 +1,5 @@
 """
-Tests for reading iCIMS and Workable job pages (both are built by JavaScript,
+Tests for reading Workable job pages (built by JavaScript,
 so a plain fetch of the link gets an almost empty page).
 
 Run:  python -m unittest discover tests
@@ -14,27 +14,10 @@ import poller  # noqa: E402
 import company_poller  # noqa: E402
 
 SCHWAB = "https://career-schwab.icims.com/jobs/127949/job?mobile=true&needsRedirect=false"
-COOK = "https://americas-cookmedical.icims.com/jobs/20446/job?mobile=true&needsRedirect=false"
 WORKABLE = "https://apply.workable.com/elevation-autism-center/j/B5CCC7D40B/apply"
 
 
 class UrlTests(unittest.TestCase):
-
-    def test_icims_url(self):
-        self.assertEqual(company_poller.icims_url(SCHWAB),
-                         "https://career-schwab.icims.com/jobs/127949/job?in_iframe=1")
-
-    def test_icims_url_other_firm(self):
-        self.assertEqual(company_poller.icims_url(COOK),
-                         "https://americas-cookmedical.icims.com/jobs/20446/job?in_iframe=1")
-
-    def test_icims_url_with_title_in_path(self):
-        link = "https://careers-acme.icims.com/jobs/555/software-engineer/job?hub=7"
-        self.assertEqual(company_poller.icims_url(link),
-                         "https://careers-acme.icims.com/jobs/555/software-engineer/job?in_iframe=1")
-
-    def test_icims_url_not_icims(self):
-        self.assertEqual(company_poller.icims_url(WORKABLE), "")
 
     def test_workable_url(self):
         self.assertEqual(company_poller.workable_url(WORKABLE),
@@ -64,14 +47,6 @@ class PageTextTests(unittest.TestCase):
             return reply
         poller.fetch = fetch
 
-    def test_icims_fetches_iframe_page(self):
-        self.fake("<html><script>var x=1;</script><div>Requirements: C++ and Python. "
-                  "No sponsorship now or in the future.</div></html>")
-        text = company_poller.page_text({"link": SCHWAB})
-        self.assertEqual(self.asked, ["https://career-schwab.icims.com/jobs/127949/job?in_iframe=1"])
-        self.assertIn("No sponsorship now or in the future", text)
-        self.assertNotIn("var x", text)
-
     def test_workable_reads_all_parts(self):
         self.fake(json.dumps({"title": "Software Engineer",
                               "description": "<p>Build tools.</p>",
@@ -86,6 +61,11 @@ class PageTextTests(unittest.TestCase):
     def test_workable_missing_parts(self):
         self.fake(json.dumps({"description": "<p>Only this.</p>"}))
         self.assertIn("Only this.", company_poller.page_text({"link": WORKABLE}))
+
+    def test_icims_left_as_before(self):
+        self.fake("<p>blocked</p>")
+        company_poller.page_text({"link": SCHWAB})
+        self.assertEqual(self.asked, [SCHWAB])
 
     def test_other_sites_unchanged(self):
         self.fake("<html><style>a{}</style><p>Plain page text</p></html>")

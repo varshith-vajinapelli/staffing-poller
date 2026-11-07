@@ -19,10 +19,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CANDIDATE_PROFILE: ${{ secrets.CANDIDATE_PROFILE }}
         run: python tools/check_job.py "https://accenture.wd103.myworkdayjobs.com/AccentureCareers/job/Charlotte-1120-S-Tryon-St-Corp/Test-Automation-Engineer---6596991_14913857" Accenture
-      - name: Live iCIMS and Workable pages
+      - name: Live Workable page
         run: >
           python tools/check_pages.py
-          "https://career-schwab.icims.com/jobs/127949/job?mobile=true&needsRedirect=false"
-          "https://career-schwab.icims.com/jobs/129410/job?mobile=true&needsRedirect=false"
-          "https://americas-cookmedical.icims.com/jobs/20446/job?mobile=true&needsRedirect=false"
           "https://apply.workable.com/elevation-autism-center/j/B5CCC7D40B/apply"
