@@ -284,6 +284,16 @@ def page_text(job):
     return text
 
 
+def mark_title_only(job):
+    # iCIMS blocks automated reading on purpose, so it's expected, not a
+    # problem: say so on the job's own email line instead of raising an alert.
+    if ".icims.com/" not in job["link"]:
+        return False
+    note = "iCIMS page, AI saw title only - check sponsorship yourself"
+    job["type"] = job["type"] + " · " + note if job.get("type") else note
+    return True
+
+
 def workable_url(link):
     # https://apply.workable.com/acme/j/ABC123/apply
     #   -> https://apply.workable.com/api/v2/accounts/acme/jobs/ABC123 (Workable's job API)
@@ -402,7 +412,8 @@ def run(db, dry_run):
             # JavaScript - the AI only gets the title, so say so.
             if len(job["desc"]) < 300:
                 job["desc"] = ""
-                unread.append(job["firm"])
+                if not mark_title_only(job):
+                    unread.append(job["firm"])
     if unread:
         poller.note_problem("describe:Simplify",
                             "Couldn't read %d job pages, so the AI judged them from the title "

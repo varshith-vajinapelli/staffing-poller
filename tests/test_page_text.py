@@ -78,3 +78,29 @@ class PageTextTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TitleOnlyTests(unittest.TestCase):
+    """iCIMS jobs get a note on their own email line instead of an alert."""
+
+    def test_icims_tagged_not_alerted(self):
+        job = {"link": SCHWAB, "type": "Full-time"}
+        self.assertTrue(company_poller.mark_title_only(job))
+        self.assertIn("Full-time", job["type"])
+        self.assertIn("iCIMS", job["type"])
+        self.assertIn("sponsorship", job["type"])
+
+    def test_icims_without_type(self):
+        job = {"link": SCHWAB, "type": ""}
+        company_poller.mark_title_only(job)
+        self.assertFalse(job["type"].startswith(" "))
+
+    def test_internship_word_kept(self):
+        job = {"link": SCHWAB, "type": "Internship"}
+        company_poller.mark_title_only(job)
+        self.assertIn("Internship", job["type"])
+
+    def test_other_sites_still_alert(self):
+        job = {"link": "https://jobs.example.com/1", "type": "Full-time"}
+        self.assertFalse(company_poller.mark_title_only(job))
+        self.assertEqual(job["type"], "Full-time")
