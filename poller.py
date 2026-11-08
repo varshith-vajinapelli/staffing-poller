@@ -741,6 +741,22 @@ def deloitte_jobs():
     return jobs
 
 
+def wipro_fetch(body):
+    # Wipro's API gives short bursts of HTTP 500. fetch() already tries twice;
+    # wait longer and try up to two more times before giving up.
+    url = "https://careers.wipro.com/services/recruiting/v1/jobs"
+    for wait in (20, 40, None):
+        try:
+            return fetch(url, body)
+        except urllib.error.HTTPError as e:
+            if wait is None or e.code not in (500, 502, 503, 504):
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            if wait is None:
+                raise
+        time.sleep(wait)
+
+
 def wipro_jobs():
     # Wipro's job API (SAP SuccessFactors), US only, newest first, 10 per page;
     # the description is read from each job page later.
@@ -749,7 +765,16 @@ def wipro_jobs():
         body = {"locale": "en_US", "pageNumber": page, "sortBy": "date", "keywords": "",
                 "location": "", "facetFilters": {"jobLocationCountry": ["United States"]},
                 "brand": "", "skills": [], "categoryId": 0, "alertId": "", "rcmCandidateId": ""}
-        data = json.loads(fetch("https://careers.wipro.com/services/recruiting/v1/jobs", body))
+        try:
+            data = json.loads(wipro_fetch(body))
+        except Exception as e:
+            if page == 0:
+                raise   # nothing worked at all: report it as a problem
+            # A later page failed (Wipro's API is flaky on deeper pages). Keep
+            # the newest jobs we already have instead of losing the whole check.
+            print("Wipro: page %d failed (%s) - using the %d jobs from earlier pages"
+                  % (page, e, len(jobs)))
+            break
         results = data.get("jobSearchResult", [])
         for row in results:
             it = row.get("response", {})
@@ -1510,6 +1535,8 @@ def run(db, dry_run):
             note_problem("fetch:" + name, "%s: couldn't check (%s)" % (name, e))
             continue
         if not dry_run:
+            # It works again, so drop any earlier "couldn't check" alert for it.
+            db.execute("DELETE FROM alerts WHERE key = ?", ("fetch:" + name,))
             check_zero(db, name, len(jobs))
         good = []
         for j in jobs:
