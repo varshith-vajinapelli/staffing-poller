@@ -427,6 +427,19 @@ def randstad_jobs():
     return jobs
 
 
+def experis_search(body):
+    # Experis occasionally sends back a cut-off or garbled response, which shows
+    # up as a JSON error. A second or third try almost always gets a clean one.
+    url = "https://www.experis.com/api/services/Jobs/searchjobs"
+    for attempt in range(3):
+        try:
+            return json.loads(fetch(url, body))
+        except ValueError:
+            if attempt == 2:
+                raise
+            time.sleep(5)
+
+
 def experis_jobs():
     # Same search the Experis site runs: 40 miles around each metro center.
     jobs = []
@@ -437,7 +450,7 @@ def experis_jobs():
             "latitude": lat, "longitude": lon, "radius": 40,
         }}
         try:
-            data = json.loads(fetch("https://www.experis.com/api/services/Jobs/searchjobs", body))
+            data = experis_search(body)
         except Exception as e:
             note_problem("fetch:Experis " + name, "Experis (%s): couldn't check (%s)" % (name, e))
             continue
@@ -1536,7 +1549,13 @@ def run(db, dry_run):
             continue
         if not dry_run:
             # It works again, so drop any earlier "couldn't check" alert for it.
-            db.execute("DELETE FROM alerts WHERE key = ?", ("fetch:" + name,))
+            # Per-city alerts ("fetch:Experis Detroit") count too, but keep any
+            # that failed again this run so their 3-hour timer isn't reset.
+            failed_now = {k for k, m in PROBLEMS}
+            for (k,) in db.execute("SELECT key FROM alerts WHERE key = ? OR key LIKE ?",
+                                   ("fetch:" + name, "fetch:" + name + " %")).fetchall():
+                if k not in failed_now:
+                    db.execute("DELETE FROM alerts WHERE key = ?", (k,))
             check_zero(db, name, len(jobs))
         good = []
         for j in jobs:
