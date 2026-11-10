@@ -701,30 +701,64 @@ def capgemini_jobs():
 
 
 def cognizant_jobs():
-    # Server-rendered US job list, 10 per page; the description is read later.
+    # Cognizant's public listing pages are server-rendered. The global search
+    # exposes US Technology jobs, including links under /global-en/jobs/.
+    # Keep the original US listing as a second source for broader coverage.
     jobs = []
+    seen_ids = set()
+    successful_listing = False
+    failures = []
     card_re = re.compile(r'<div class="card-body">(.*?)(?=<div class="card-body">|$)', re.S)
-    for page in range(1, 11):
-        page_html = fetch("https://careers.cognizant.com/us-en/jobs/?page=%d" % page)
-        for card in card_re.findall(page_html):
-            link = re.search(r'href="(/us-en/jobs/(\d+)/[^"]+)"[^>]*>([^<]+)</a>', card)
-            if not link:
-                continue
-            text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " | ", card))
-            place = re.search(r"([^|]*United States)", text)
-            if not place:
-                continue
-            jobs.append({
-                "id": "cognizant:" + link.group(2),
-                "firm": "Cognizant",
-                "title": html.unescape(link.group(3).strip()),
-                "location": html.unescape(place.group(1).strip()),
-                "type": "",
-                "posted": "",
-                "contact": "",
-                "link": "https://careers.cognizant.com" + link.group(1),
-                "desc": "",
-            })
+    link_re = re.compile(
+        r'href="(/(?:us-en|global-en)/jobs/(\d+)/[^"]+)"[^>]*>([^<]+)</a>'
+    )
+    searches = [
+        ("https://careers.cognizant.com/global-en/jobs/"
+         "?keyword=&industry=Technology&location=United+States&radius=100"
+         "&lat=&lng=&cname=United+States&ccode=US&pagesize=10"),
+        "https://careers.cognizant.com/us-en/jobs/?pagesize=10",
+    ]
+    for search_url in searches:
+        for page in range(1, 11):
+            separator = "&" if "?" in search_url else "?"
+            url = "%s%spage=%d" % (search_url, separator, page)
+            try:
+                page_html = fetch(url)
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+                # A blocked global listing must not prevent the US fallback.
+                print("Cognizant listing unavailable (%s): %s" % (url, exc))
+                failures.append("%s: %s" % (url, exc))
+                break
+            successful_listing = True
+            cards = card_re.findall(page_html)
+            if not cards:
+                # No results (or an unexpected response): don't repeat 10 times.
+                print("Cognizant listing has no parseable cards: %s" % url)
+                break
+            for card in cards:
+                link = link_re.search(card)
+                if not link:
+                    continue
+                text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " | ", card))
+                place = re.search(r"([^|]*United States)", text)
+                if not place or link.group(2) in seen_ids:
+                    continue
+                seen_ids.add(link.group(2))
+                jobs.append({
+                    "id": "cognizant:" + link.group(2),
+                    "firm": "Cognizant",
+                    "title": html.unescape(link.group(3).strip()),
+                    "location": html.unescape(place.group(1).strip()),
+                    "type": "",
+                    "posted": "",
+                    "contact": "",
+                    "link": "https://careers.cognizant.com" + link.group(1),
+                    "desc": "",
+                })
+    if not successful_listing:
+        raise RuntimeError(
+            "Cognizant listings could not be retrieved: " + "; ".join(failures)
+        )
     return jobs
 
 
