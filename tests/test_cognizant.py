@@ -22,6 +22,14 @@ CARD = """
 
 
 class CognizantTests(unittest.TestCase):
+    def test_all_sources_blocked_reports_failure(self):
+        def blocked(url):
+            raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+
+        with patch.object(poller, "fetch", side_effect=blocked):
+            with self.assertRaisesRegex(RuntimeError, "Cognizant listings could not be retrieved"):
+                poller.cognizant_jobs()
+
     def test_blocked_global_listing_still_tries_us_fallback(self):
         urls = []
 
