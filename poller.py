@@ -706,6 +706,8 @@ def cognizant_jobs():
     # Keep the original US listing as a second source for broader coverage.
     jobs = []
     seen_ids = set()
+    successful_listing = False
+    failures = []
     card_re = re.compile(r'<div class="card-body">(.*?)(?=<div class="card-body">|$)', re.S)
     link_re = re.compile(
         r'href="(/(?:us-en|global-en)/jobs/(\d+)/[^"]+)"[^>]*>([^<]+)</a>'
@@ -725,7 +727,9 @@ def cognizant_jobs():
             except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
                 # A blocked global listing must not prevent the US fallback.
                 print("Cognizant listing unavailable (%s): %s" % (url, exc))
+                failures.append("%s: %s" % (url, exc))
                 break
+            successful_listing = True
             cards = card_re.findall(page_html)
             if not cards:
                 # No results (or an unexpected response): don't repeat 10 times.
@@ -751,6 +755,10 @@ def cognizant_jobs():
                     "link": "https://careers.cognizant.com" + link.group(1),
                     "desc": "",
                 })
+    if not successful_listing:
+        raise RuntimeError(
+            "Cognizant listings could not be retrieved: " + "; ".join(failures)
+        )
     return jobs
 
 
