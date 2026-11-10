@@ -1,0 +1,44 @@
+name: Cognizant discovery test
+
+on:
+  pull_request:
+    paths:
+      - "poller.py"
+      - "tests/test_cognizant.py"
+      - ".github/workflows/cognizant-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run Cognizant regression test
+        run: python -m unittest discover -s tests -p 'test_cognizant.py' -v
+      - name: Probe live Cognizant US Technology listing (read-only)
+        run: |
+          python - <<'PY'
+          import re
+          import urllib.request
+
+          url = ("https://careers.cognizant.com/global-en/jobs/"
+                 "?keyword=&industry=Technology&location=United+States&radius=100"
+                 "&lat=&lng=&cname=United+States&ccode=US&pagesize=10&page=1")
+          req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+          with urllib.request.urlopen(req, timeout=25) as response:
+              page = response.read().decode("utf-8", errors="replace")
+              print("HTTP status:", response.status)
+          cards = re.findall(r'<div class="card card-job"[^>]*data-id="([^"]+)"', page)
+          print("Job cards on page 1:", len(cards))
+          print("First IDs:", cards[:10])
+          print("Target job 00071257222 on page 1:", "00071257222" in cards)
+          if not cards:
+              raise SystemExit("No job cards returned; inspect URL, blocking, or rendering")
+          PY
