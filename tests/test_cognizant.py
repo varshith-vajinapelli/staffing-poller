@@ -1,6 +1,7 @@
 """Regression tests for Cognizant listing discovery (no network required)."""
 
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 import poller
@@ -21,6 +22,22 @@ CARD = """
 
 
 class CognizantTests(unittest.TestCase):
+    def test_blocked_global_listing_still_tries_us_fallback(self):
+        urls = []
+
+        def fake_fetch(url):
+            urls.append(url)
+            if "/global-en/" in url:
+                raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+            return CARD if "page=1" in url else ""
+
+        with patch.object(poller, "fetch", side_effect=fake_fetch):
+            jobs = poller.cognizant_jobs()
+
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["id"], "cognizant:00071257222")
+        self.assertTrue(any("/us-en/jobs/" in url for url in urls))
+
     def test_global_us_technology_job_is_found_and_deduplicated(self):
         urls = []
 
