@@ -704,9 +704,18 @@ def cognizant_jobs():
     # Server-rendered US job list, 10 per page; the description is read later.
     jobs = []
     card_re = re.compile(r'<div class="card-body">(.*?)(?=<div class="card-body">|$)', re.S)
-    for page in range(1, 11):
-        page_html = fetch("https://careers.cognizant.com/us-en/jobs/?page=%d" % page)
-        for card in card_re.findall(page_html):
+    for page in range(1, 121):
+        try:
+            page_html = fetch("https://careers.cognizant.com/us-en/jobs/"
+                              "?location=United%%20States&cname=United%%20States&page=%d" % page)
+        except urllib.error.HTTPError:
+            if page == 1:
+                raise
+            break  # past the last page
+        cards = card_re.findall(page_html)
+        if not cards:
+            break
+        for card in cards:
             link = re.search(r'href="(/us-en/jobs/(\d+)/[^"]+)"[^>]*>([^<]+)</a>', card)
             if not link:
                 continue
