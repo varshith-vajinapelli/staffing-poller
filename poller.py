@@ -719,8 +719,19 @@ def cognizant_jobs():
     for search_url in searches:
         for page in range(1, 11):
             separator = "&" if "?" in search_url else "?"
-            page_html = fetch("%s%spage=%d" % (search_url, separator, page))
-            for card in card_re.findall(page_html):
+            url = "%s%spage=%d" % (search_url, separator, page)
+            try:
+                page_html = fetch(url)
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
+                # A blocked global listing must not prevent the US fallback.
+                print("Cognizant listing unavailable (%s): %s" % (url, exc))
+                break
+            cards = card_re.findall(page_html)
+            if not cards:
+                # No results (or an unexpected response): don't repeat 10 times.
+                print("Cognizant listing has no parseable cards: %s" % url)
+                break
+            for card in cards:
                 link = link_re.search(card)
                 if not link:
                     continue
