@@ -871,7 +871,7 @@ FIRMS = [
     ("Insight Global", insight_global_jobs),
     ("Randstad", randstad_jobs),
     ("Beacon Hill", beacon_hill_jobs),
-    ("Accenture", accenture_jobs),
+    # ("Accenture", accenture_jobs),
     ("Capgemini", capgemini_jobs),
     ("Cognizant", cognizant_jobs),
     ("Deloitte", deloitte_jobs),
