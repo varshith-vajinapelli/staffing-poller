@@ -191,13 +191,15 @@ METRO_CENTERS = [
 # ---------- small helpers ----------
 
 def fetch(url, data=None, timeout=30, retry=True):
-    # Job sites sometimes fail for a moment (502, 503, a timeout); wait and try
+    # Job sites sometimes fail for a moment (429, 502, 503, a timeout); wait and try
     # once more before giving up. Gemini calls pass retry=False - they have their own.
     try:
         return fetch_once(url, data, timeout)
     except urllib.error.HTTPError as e:
-        if not retry or e.code not in (500, 502, 503, 504):
+        if not retry or e.code not in (429, 500, 502, 503, 504):
             raise
+        if e.code == 429:
+            time.sleep(30)   # "too many requests": wait longer before the retry
     except (urllib.error.URLError, TimeoutError):
         if not retry:
             raise
@@ -617,7 +619,7 @@ def insight_global_jobs():
 # checked every run and across the whole US (not just PLACES). Infosys and TCS
 # block requests from GitHub's servers, so they can't be included.
 
-ACCENTURE_SEARCHES = ["software", "developer", "data", "intern", "associate engineer", "analyst"]
+ACCENTURE_SEARCHES = ["software", "developer", "intern"]
 
 
 def workday_days_ago(posted_on):
@@ -640,6 +642,7 @@ def accenture_jobs():
     seen_paths = set()
     jobs = []
     for words in ACCENTURE_SEARCHES:
+        time.sleep(1)   # go gently: Workday answers 429 when asked too fast
         body = {"appliedFacets": us_only, "limit": 20, "offset": 0, "searchText": words}
         data = json.loads(fetch(base + "/jobs", body))
         for it in data.get("jobPostings", []):
@@ -663,6 +666,7 @@ def accenture_jobs():
                 "desc": "",
             }
             if not drop_reason(title):
+                time.sleep(1)
                 info = json.loads(fetch(base + path)).get("jobPostingInfo", {})
                 places = [info.get("location", "")] + info.get("additionalLocations", [])
                 job["location"] = "; ".join(p for p in places if p)[:120] or job["location"]
@@ -1654,3 +1658,4 @@ def run(db, dry_run):
 
 if __name__ == "__main__":
     main()
+
